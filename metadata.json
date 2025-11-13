@@ -1,0 +1,5 @@
+{
+  "name": "ISL synth",
+  "description": "An interactive keyboard and sampling synthesizer application built with React and the Web Audio API. Play notes using different waveforms, or upload your own audio file to use as a sample. Shape your sound with ADSR envelope controls for a customized audio experience.",
+  "requestFramePermissions": []
+}

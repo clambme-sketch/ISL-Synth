@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>React Synth Sampler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'synth-gray': {
+                '900': '#121212',
+                '800': '#1E1E1E',
+                '700': '#2A2A2A',
+                '600': '#3D3D3D',
+                '500': '#8A8A8A',
+              },
+              'synth-purple': {
+                '500': '#8A2BE2',
+                '400': '#9932CC',
+              },
+              'synth-cyan': {
+                '500': '#00FFFF',
+                '400': '#40E0D0',
+              }
+            },
+            fontFamily: {
+              'sans': ['Lexend', 'sans-serif'],
+            },
+          },
+        },
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-smoothing: grayscale;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        /* New styles for rotated slider */
+        .slider-rotated {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 90px; /* This becomes the 'height' of the slider */
+          height: 8px;  /* This becomes the 'width' of the slider track */
+          background: #2A2A2A; /* synth-gray-700 */
+          border-radius: 4px;
+          cursor: ns-resize;
+          transform-origin: center center;
+          transform: rotate(-90deg);
+        }
+        .slider-rotated::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          height: 20px;
+          width: 20px;
+          background: #00FFFF; /* synth-cyan-500 */
+          border-radius: 50%;
+          border: 3px solid #1E1E1E; /* synth-gray-800 */
+          box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+          cursor: ns-resize;
+          margin-top: -6px; /* Vertically center thumb on the track */
+        }
+        .slider-rotated::-moz-range-thumb {
+          height: 14px; /* Moz thumb size is calculated differently */
+          width: 14px;
+          background: #00FFFF;
+          border-radius: 50%;
+          border: 3px solid #1E1E1E;
+          box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+          cursor: ns-resize;
+        }
+        .slider-rotated::-moz-range-track {
+          background: #2A2A2A;
+          border-radius: 4px;
+          width: 100%;
+          height: 8px;
+        }
+
+        /* Custom styles for horizontal range inputs */
+        input[type="range"].horizontal-slider {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 100%;
+          height: 8px;
+          background: #2A2A2A; /* synth-gray-700 */
+          border-radius: 4px;
+          cursor: ew-resize;
+        }
+
+        input[type="range"].horizontal-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          height: 20px;
+          width: 20px;
+          background: #00FFFF; /* synth-cyan-500 */
+          border-radius: 50%;
+          border: 3px solid #1E1E1E; /* synth-gray-800 */
+          box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+          cursor: ew-resize;
+          margin-top: -6px; /* Center thumb on track */
+        }
+
+        input[type="range"].horizontal-slider::-moz-range-thumb {
+          height: 14px;
+          width: 14px;
+          background: #00FFFF;
+          border-radius: 50%;
+          border: 3px solid #1E1E1E;
+          box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+          cursor: ew-resize;
+        }
+
+        input[type="range"].horizontal-slider::-moz-range-track {
+          background: #2A2A2A;
+          border-radius: 4px;
+          width: 100%;
+          height: 8px;
+        }
+        
+        /* Hide number input spinners */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+          -webkit-appearance: none; 
+          margin: 0; 
+        }
+        input[type=number] {
+          -moz-appearance: textfield;
+        }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-synth-gray-900 text-synth-gray-500">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
