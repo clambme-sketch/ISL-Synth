@@ -1,5 +1,8 @@
+
+
 import React, { useState, useEffect } from 'react';
 import { ChevronDownIcon, DownloadIcon, PlayIcon, RecordIcon, StopIcon, TrashIcon } from './icons';
+import { LoopVisualizer } from './LoopVisualizer';
 
 interface SequencerPanelProps {
     bpm: number;
@@ -16,9 +19,11 @@ interface SequencerPanelProps {
     isDownloading: boolean;
     hasLoop: boolean;
     countInBeat: number;
+    countInMeasure: number;
     loopBars: number;
     onLoopBarsChange: (bars: number) => void;
     isLooping: boolean;
+    loopBuffer: AudioBuffer | null;
 }
 
 const IconButton: React.FC<{
@@ -51,7 +56,7 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
     bpm, onBpmChange, isMetronomePlaying, onToggleMetronome, metronomeTick,
     loopState, onRecord, onPlay, onClear, onDownload, loopProgress,
     isDownloading, hasLoop, countInBeat,
-    loopBars, onLoopBarsChange, isLooping,
+    countInMeasure, loopBars, onLoopBarsChange, isLooping, loopBuffer
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const isRecording = loopState === 'recording' || loopState === 'overdubbing';
@@ -70,6 +75,14 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
     }
     onBpmChange(newBpm);
   };
+
+  const totalCountInBeats = 8; // 2 measures * 4 beats
+  let countInProgress = 0;
+  if (loopState === 'countingIn' && countInMeasure > 0) {
+      const beatsElapsedInPreviousMeasures = (countInMeasure - 1) * 4;
+      const beatsElapsed = beatsElapsedInPreviousMeasures + countInBeat;
+      countInProgress = beatsElapsed / totalCountInBeats;
+  }
 
   return (
     <div className="w-full bg-synth-gray-900 shadow-2xl rounded-xl p-4 flex flex-col gap-4">
@@ -162,6 +175,16 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                         className="absolute top-0 left-0 h-full bg-synth-cyan-500"
                         style={{ width: `${loopProgress * 100}%` }}
                     ></div>
+                    {/* Count-in progress bar */}
+                    {loopState === 'countingIn' && (
+                        <div
+                            className="absolute top-0 left-0 h-full bg-yellow-500"
+                            style={{ 
+                                width: `${countInProgress * 100}%`,
+                                transition: `width ${60/bpm}s linear` 
+                            }}
+                        ></div>
+                    )}
                 </div>
                 <div className="flex items-center justify-around">
                     <IconButton 
@@ -197,6 +220,12 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                         )}
                     </IconButton>
                 </div>
+
+                {loopBuffer && (
+                    <div className="mt-4 h-16 bg-synth-gray-900 rounded-md">
+                        <LoopVisualizer audioBuffer={loopBuffer} progress={loopProgress} />
+                    </div>
+                )}
               </div>
             </div>
         </div>

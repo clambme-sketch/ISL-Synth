@@ -1,12 +1,13 @@
 
-import React, { useState } from 'react';
-import type { ADSREnvelope, WaveformType, OscillatorSettings, SynthPreset } from '../types';
-import { WaveformIcon } from './icons';
+import React, { useState, useRef, useEffect } from 'react';
+import type { ADSREnvelope, WaveformType, OscillatorSettings, SynthPreset, PresetCategory } from '../types';
+import { WaveformIcon, UploadIcon, MicrophoneIcon } from './icons';
 import { Lissajous } from './Lissajous';
 import { SliderControl } from './Knob';
 import { EnvelopeVisualizer } from './EnvelopeVisualizer';
 import { SYNTH_PRESETS } from '../constants';
 import { Tooltip } from './Tooltip';
+import { SampleEditor } from './SampleEditor';
 
 // --- PROPS INTERFACE ---
 interface ControlsProps {
@@ -20,9 +21,19 @@ interface ControlsProps {
   setOscMix: React.Dispatch<React.SetStateAction<number>>;
   onPresetChange: (preset: SynthPreset) => void;
   activePresetName: string;
+  activeCategory: PresetCategory;
   analyserX: AnalyserNode | null;
   analyserY: AnalyserNode | null;
   showTooltips: boolean;
+  onSampleLoad?: (buffer: ArrayBuffer) => void;
+  sampleBuffer?: AudioBuffer | null;
+  trimStart: number;
+  trimEnd: number;
+  onTrimChange: (start: number, end: number) => void;
+  sampleVolume?: number;
+  onSampleVolumeChange?: (volume: number) => void;
+  sampleLoop?: boolean;
+  onSampleLoopChange?: (loop: boolean) => void;
 }
 
 // --- REUSABLE SUB-COMPONENTS ---
@@ -102,6 +113,136 @@ const OscillatorPanel: React.FC<{
     );
 };
 
+const SampleLoader: React.FC<{ onSampleLoad?: (buffer: ArrayBuffer) => void }> = ({ onSampleLoad }) => {
+    const [fileName, setFileName] = useState<string | null>(null);
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const chunksRef = useRef<Blob[]>([]);
+    const timerRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+            }
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                mediaRecorderRef.current.stop();
+            }
+        };
+    }, []);
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        
+        setFileName(file.name);
+        
+        if (onSampleLoad) {
+            const arrayBuffer = await file.arrayBuffer();
+            onSampleLoad(arrayBuffer);
+        }
+    };
+
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            chunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) chunksRef.current.push(e.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                // Create blob from chunks
+                const blob = new Blob(chunksRef.current);
+                const arrayBuffer = await blob.arrayBuffer();
+                
+                if (onSampleLoad) onSampleLoad(arrayBuffer);
+                setFileName("Recorded Sample");
+                
+                // Stop all tracks to release mic
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+            setRecordingDuration(0);
+            timerRef.current = window.setInterval(() => {
+                setRecordingDuration(prev => prev + 0.1);
+            }, 100);
+
+        } catch (err) {
+            console.error("Microphone access error:", err);
+            alert("Could not access microphone. Please check permissions.");
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        }
+    };
+
+    return (
+        <div className="grid grid-cols-2 gap-4 h-40 w-full">
+            {/* Upload Area */}
+            <div className="bg-synth-gray-900/50 p-4 rounded-lg flex flex-col items-center justify-center border-2 border-dashed border-synth-gray-700 hover:border-synth-purple-500 transition-colors relative group">
+                <UploadIcon className="w-8 h-8 text-synth-gray-500 mb-1 group-hover:text-synth-purple-400 transition-colors" />
+                <h3 className="text-sm font-semibold text-white">Upload File</h3>
+                <label className="cursor-pointer mt-1 z-10">
+                    <span className="px-3 py-1 bg-synth-gray-700 text-white text-xs font-bold rounded hover:bg-synth-gray-600 transition-colors">
+                        Select .WAV
+                    </span>
+                    <input 
+                        type="file" 
+                        accept="audio/*" 
+                        onChange={handleFileChange} 
+                        className="hidden" 
+                    />
+                </label>
+                {fileName && !isRecording && (
+                    <div className="absolute bottom-2 left-2 right-2 px-2 py-0.5 bg-synth-gray-800 rounded text-synth-cyan-500 text-[10px] font-mono truncate text-center">
+                        {fileName}
+                    </div>
+                )}
+            </div>
+
+            {/* Record Area */}
+            <button 
+                onClick={isRecording ? stopRecording : startRecording}
+                className={`p-4 rounded-lg flex flex-col items-center justify-center border-2 border-solid transition-all relative overflow-hidden group ${
+                    isRecording 
+                    ? 'bg-red-900/20 border-red-500 animate-pulse' 
+                    : 'bg-synth-gray-900/50 border-synth-gray-700 hover:border-red-400 hover:bg-synth-gray-800'
+                }`}
+            >
+                {isRecording ? (
+                    <>
+                         <div className="w-8 h-8 bg-red-500 rounded mb-1 shadow-[0_0_15px_rgba(239,68,68,0.7)]" />
+                         <h3 className="text-sm font-bold text-red-400 tracking-wider">STOP</h3>
+                         <span className="font-mono text-red-300 text-sm mt-1">{recordingDuration.toFixed(1)}s</span>
+                    </>
+                ) : (
+                    <>
+                        <MicrophoneIcon className="w-8 h-8 text-synth-gray-500 mb-1 group-hover:text-red-400 transition-colors" />
+                        <h3 className="text-sm font-semibold text-white group-hover:text-red-100">Record Mic</h3>
+                        <span className="text-xs text-synth-gray-500 group-hover:text-red-200">Click to Start</span>
+                    </>
+                )}
+            </button>
+        </div>
+    );
+};
+
 
 // --- MAIN CONTROLS COMPONENT ---
 
@@ -110,9 +251,14 @@ export const Controls: React.FC<ControlsProps> = ({
   osc1, setOsc1,
   osc2, setOsc2,
   oscMix, setOscMix,
-  onPresetChange, activePresetName,
+  onPresetChange, activePresetName, activeCategory,
   analyserX, analyserY,
   showTooltips,
+  onSampleLoad,
+  sampleBuffer,
+  trimStart, trimEnd, onTrimChange,
+  sampleVolume, onSampleVolumeChange,
+  sampleLoop, onSampleLoopChange
 }) => {
   const [scopeColorX, setScopeColorX] = useState('#00FFFF');
   const [scopeColorY, setScopeColorY] = useState('#8A2BE2');
@@ -122,18 +268,56 @@ export const Controls: React.FC<ControlsProps> = ({
   };
   
   const isSingleOscillatorMode = SYNTH_PRESETS.find(p => p.name === activePresetName)?.singleOscillator ?? false;
+  const isSamplingMode = activeCategory === 'Sampling';
+
+  // Categorize presets
+  const categories: PresetCategory[] = ['Simple', 'Subtractive', 'AM', 'FM', 'Sampling'];
+  const presetsByCategory = React.useMemo(() => {
+      const grouped: Record<PresetCategory, SynthPreset[]> = {
+          'Simple': [], 'Subtractive': [], 'AM': [], 'Sampling': [], 'FM': []
+      };
+      SYNTH_PRESETS.forEach(p => grouped[p.category].push(p));
+      return grouped;
+  }, []);
+
+  const handleTabClick = (category: PresetCategory) => {
+      // When switching tabs, select the first preset in that category automatically
+      const firstPreset = presetsByCategory[category][0];
+      if (firstPreset) {
+          onPresetChange(firstPreset);
+      }
+  };
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      {/* --- PRESETS PANEL --- */}
+      {/* --- PRESETS PANEL WITH TABS --- */}
       <div className="bg-synth-gray-800 p-4 rounded-lg space-y-4">
-        <h3 className="text-lg font-semibold text-white">Presets</h3>
+        <div className="flex flex-wrap gap-2 border-b border-synth-gray-700 pb-2 mb-2">
+            {categories.map(category => (
+                <button
+                    key={category}
+                    onClick={() => handleTabClick(category)}
+                    className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors border-b-2 ${
+                        activeCategory === category 
+                        ? 'bg-synth-gray-700 text-white border-synth-cyan-500' 
+                        : 'text-synth-gray-500 hover:text-white border-transparent hover:bg-synth-gray-700'
+                    }`}
+                >
+                    {category}
+                </button>
+            ))}
+        </div>
+        
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-            {SYNTH_PRESETS.map(preset => (
+            {presetsByCategory[activeCategory].map(preset => (
                 <button 
                     key={preset.name} 
                     onClick={() => onPresetChange(preset)}
-                    className={`p-2 rounded-md cursor-pointer transition-colors text-center text-sm ${preset.name === activePresetName ? 'bg-synth-cyan-500 text-synth-gray-900 font-bold' : 'bg-synth-gray-700 hover:bg-synth-gray-600'}`}
+                    className={`p-2 rounded-md cursor-pointer transition-colors text-center text-sm ${
+                        preset.name === activePresetName 
+                        ? 'bg-synth-cyan-500 text-synth-gray-900 font-bold' 
+                        : 'bg-synth-gray-700 hover:bg-synth-gray-600 text-white'
+                    }`}
                 >
                     {preset.name}
                 </button>
@@ -143,35 +327,71 @@ export const Controls: React.FC<ControlsProps> = ({
 
       {/* --- MAIN CONTROLS ROW --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
-        {/* Combined Oscillators & Mixer Panel */}
-        <div className="bg-synth-gray-800 p-4 rounded-lg space-y-4 md:col-span-2 lg:col-span-2">
-            <h3 className="text-lg font-semibold text-white text-center">Sound Source</h3>
-            <div className={`grid grid-cols-1 ${isSingleOscillatorMode ? 'sm:grid-cols-1' : 'sm:grid-cols-[2fr_1fr_2fr]'} gap-4 items-stretch`}>
-                
-                {/* Oscillator 1 */}
-                <div className="bg-synth-gray-900/50 p-4 rounded-lg">
-                    <OscillatorPanel id={1} settings={osc1} onSettingsChange={setOsc1} isSingleOscillatorMode={isSingleOscillatorMode} />
-                </div>
-
-                {!isSingleOscillatorMode && (
-                  <>
-                    {/* Mixer */}
-                    <div className="bg-synth-gray-900/50 p-4 rounded-lg flex flex-col items-center justify-center space-y-4">
-                        <h3 className="text-lg font-semibold text-white">Mixer</h3>
-                        <div className="flex-grow flex items-center justify-center">
-                           <div className="w-16 h-full">
-                                <SliderControl label="Mix" value={oscMix} min={0} max={1} step={0.01} onChange={setOscMix} showTooltip={showTooltips} tooltipText={`OSC 1: ${(100 - oscMix * 100).toFixed(0)}% | OSC 2: ${(oscMix * 100).toFixed(0)}%`} />
-                           </div>
+        {/* Combined Oscillators & Mixer Panel OR Sample Editor */}
+        <div className="bg-synth-gray-800 p-4 rounded-lg space-y-4 md:col-span-2 lg:col-span-2 flex flex-col">
+            <h3 className="text-lg font-semibold text-white text-center">
+                {isSamplingMode ? "Sample Editor" : "Sound Source"}
+            </h3>
+            
+            {isSamplingMode ? (
+                <div className="flex flex-col gap-4 h-full">
+                     <div className="flex-shrink-0 w-full flex gap-4">
+                        <div className="flex-grow">
+                            <SampleLoader onSampleLoad={onSampleLoad} />
                         </div>
+                         {onSampleVolumeChange && sampleVolume !== undefined && (
+                            <div className="w-24 bg-synth-gray-900/50 rounded-lg p-2 flex flex-col items-center justify-center border-2 border-synth-gray-700">
+                                <SliderControl 
+                                    label="Volume" 
+                                    value={sampleVolume} 
+                                    min={0} 
+                                    max={4.0} 
+                                    step={0.01} 
+                                    onChange={onSampleVolumeChange}
+                                    showTooltip={showTooltips}
+                                    tooltipText={`Volume: ${(sampleVolume * 100).toFixed(0)}%`}
+                                />
+                            </div>
+                         )}
+                     </div>
+                     <div className="flex-grow bg-synth-gray-900/50 p-4 rounded-lg">
+                        <SampleEditor 
+                            audioBuffer={sampleBuffer ?? null} 
+                            trimStart={trimStart} 
+                            trimEnd={trimEnd} 
+                            onTrimChange={onTrimChange} 
+                            loop={sampleLoop ?? false}
+                            onLoopChange={onSampleLoopChange ?? (() => {})}
+                        />
+                     </div>
+                </div>
+            ) : (
+                <div className={`grid grid-cols-1 ${isSingleOscillatorMode ? 'sm:grid-cols-1' : 'sm:grid-cols-[2fr_1fr_2fr]'} gap-4 items-stretch flex-grow`}>
+                    {/* Oscillator 1 */}
+                    <div className="bg-synth-gray-900/50 p-4 rounded-lg">
+                        <OscillatorPanel id={1} settings={osc1} onSettingsChange={setOsc1} isSingleOscillatorMode={isSingleOscillatorMode} />
                     </div>
 
-                    {/* Oscillator 2 */}
-                    <div className="bg-synth-gray-900/50 p-4 rounded-lg">
-                        <OscillatorPanel id={2} settings={osc2} onSettingsChange={setOsc2} isSingleOscillatorMode={isSingleOscillatorMode} />
-                    </div>
-                  </>
-                )}
-            </div>
+                    {!isSingleOscillatorMode && (
+                    <>
+                        {/* Mixer */}
+                        <div className="bg-synth-gray-900/50 p-4 rounded-lg flex flex-col items-center justify-center space-y-4">
+                            <h3 className="text-lg font-semibold text-white">Mixer</h3>
+                            <div className="flex-grow flex items-center justify-center">
+                            <div className="w-16 h-full">
+                                    <SliderControl label="Mix" value={oscMix} min={0} max={1} step={0.01} onChange={setOscMix} showTooltip={showTooltips} tooltipText={`OSC 1: ${(100 - oscMix * 100).toFixed(0)}% | OSC 2: ${(oscMix * 100).toFixed(0)}%`} />
+                            </div>
+                            </div>
+                        </div>
+
+                        {/* Oscillator 2 */}
+                        <div className="bg-synth-gray-900/50 p-4 rounded-lg">
+                            <OscillatorPanel id={2} settings={osc2} onSettingsChange={setOsc2} isSingleOscillatorMode={isSingleOscillatorMode} />
+                        </div>
+                    </>
+                    )}
+                </div>
+            )}
         </div>
 
         {/* ADSR Envelope */}

@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { LoopEvent } from '../types';
+import type { BeatInfo } from './useMetronome';
 
 interface UseLooperProps {
   bpm: number;
   bars: number;
   audioContext: AudioContext | null;
   isMetronomePlaying: boolean;
-  currentBeat: 1 | 2 | 3 | 4;
+  beatInfo: BeatInfo;
   onPlayNote: (note: string, time: number) => void;
   onStopNote: (note: string, time: number) => void;
   onStopAllLoopNotes: () => void;
@@ -15,10 +16,14 @@ interface UseLooperProps {
 const BEATS_PER_BAR = 4;
 const SCHEDULING_WINDOW = 0.1; // seconds
 
-export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, currentBeat, onPlayNote, onStopNote, onStopAllLoopNotes }: UseLooperProps) => {
+// A temporary event format for raw recording before processing
+type TimedLoopEvent = { note: string; time: number; type: 'on' | 'off' };
+
+export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, beatInfo, onPlayNote, onStopNote, onStopAllLoopNotes }: UseLooperProps) => {
   const [loopState, setLoopState] = useState<'idle' | 'countingIn' | 'recording' | 'playing' | 'overdubbing'>('idle');
   const [loop, setLoop] = useState<LoopEvent[]>([]);
   const [progress, setProgress] = useState(0);
+  const [countInMeasure, setCountInMeasure] = useState(0);
 
   // --- REFS ---
   const schedulerFrameRef = useRef<number>(0);
@@ -26,8 +31,7 @@ export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, current
   const recordingStopTimeRef = useRef<number>(0);
   const loopPlaybackStartTimeRef = useRef<number>(0);
 
-  const pendingNotesRef = useRef<Map<string, number>>(new Map());
-  const recordedEventsRef = useRef<LoopEvent[]>([]);
+  const timedEventsRef = useRef<TimedLoopEvent[]>([]);
   
   const waitingForDownbeatRef = useRef(false);
   const nextEventIndexRef = useRef(0);
@@ -37,71 +41,96 @@ export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, current
   const loopDuration = (60 / bpm) * BEATS_PER_BAR * bars;
 
   const stopRecording = useCallback((preciseStopTime?: number) => {
-      if (!audioContext || (loopState !== 'recording' && loopState !== 'overdubbing')) {
-          return;
-      }
-      
-      const stopTime = preciseStopTime ?? audioContext.currentTime;
-      const effectiveStopTime = Math.min(stopTime, recordingStopTimeRef.current);
+    if (!audioContext || (loopState !== 'recording' && loopState !== 'overdubbing')) {
+        return;
+    }
+    
+    const baseLoop = loopState === 'overdubbing' ? loop : [];
+    
+    const newLoopEvents: LoopEvent[] = [];
+    const noteStartTimes = new Map<string, number>();
 
-      // Finalize any notes that were still held down
-      const newEvents: LoopEvent[] = [];
-      pendingNotesRef.current.forEach((startTime, note) => {
-          const duration = effectiveStopTime - startTime;
-          const loopRelativeStartTime = startTime - recordingStartTimeRef.current;
-          
-          if (duration > 0.01 && loopRelativeStartTime >= 0 && loopRelativeStartTime < loopDuration) {
-              const truncatedDuration = Math.min(duration, loopDuration - loopRelativeStartTime);
-              newEvents.push({ note, startTime: loopRelativeStartTime, duration: truncatedDuration });
-          }
-      });
-      
-      const baseLoop = loopState === 'overdubbing' ? loop : [];
-      const finalLoop = [...baseLoop, ...recordedEventsRef.current, ...newEvents]
-          .sort((a, b) => a.startTime - b.startTime);
+    timedEventsRef.current.sort((a, b) => a.time - b.time);
 
-      // Clear all temporary recording stores
-      pendingNotesRef.current.clear();
-      recordedEventsRef.current = [];
-      
-      if (finalLoop.length > 0) {
-          setLoop(finalLoop);
-          
-          const timeSinceRecordingStart = (preciseStopTime ?? audioContext.currentTime) - recordingStartTimeRef.current;
-          lastProgressRef.current = timeSinceRecordingStart % loopDuration;
-          loopPlaybackStartTimeRef.current = recordingStartTimeRef.current;
-          nextEventIndexRef.current = 0;
-          setLoopState('playing');
-      } else {
-          // If no notes were recorded, go back to idle.
-          setLoop([]);
-          setLoopState('idle');
-          setProgress(0);
-          lastProgressRef.current = 0;
-      }
-  }, [audioContext, loopState, loopDuration, loop]);
-
-  // Effect to START recording on the downbeat after count-in
-  useEffect(() => {
-    if (loopState === 'countingIn' && waitingForDownbeatRef.current && currentBeat === 1 && audioContext) {
-        if (countInMeasuresRemainingRef.current > 0) {
-            countInMeasuresRemainingRef.current -= 1;
+    for (const event of timedEventsRef.current) {
+        if (event.time < -0.001 || event.time >= loopDuration) {
+            continue;
         }
+        
+        const eventTime = Math.max(0, event.time);
 
-        if (countInMeasuresRemainingRef.current === 0) {
-            const startTime = audioContext.currentTime;
-            recordingStartTimeRef.current = startTime;
-            recordingStopTimeRef.current = startTime + loopDuration; // Set precise stop time
-            loopPlaybackStartTimeRef.current = startTime; // Also used for progress bar during recording
-            
-            const nextState = loop.length > 0 ? 'overdubbing' : 'recording';
-            setLoopState(nextState);
-            waitingForDownbeatRef.current = false;
+        if (event.type === 'on') {
+            if (noteStartTimes.has(event.note)) {
+                const startTime = noteStartTimes.get(event.note)!;
+                const duration = eventTime - startTime;
+                if (duration > 0.01) {
+                    newLoopEvents.push({ note: event.note, startTime, duration });
+                }
+            }
+            noteStartTimes.set(event.note, eventTime);
+        } else if (event.type === 'off') {
+            if (noteStartTimes.has(event.note)) {
+                const startTime = noteStartTimes.get(event.note)!;
+                const duration = eventTime - startTime;
+                if (duration > 0.01) {
+                    newLoopEvents.push({ note: event.note, startTime, duration });
+                }
+                noteStartTimes.delete(event.note);
+            }
         }
     }
-  }, [currentBeat, loopState, audioContext, loop.length, loopDuration]);
 
-  // MAIN SCHEDULER: This requestAnimationFrame loop drives all timing-critical logic.
+    noteStartTimes.forEach((startTime, note) => {
+        const duration = loopDuration - startTime;
+        if (duration > 0.01) {
+            newLoopEvents.push({ note, startTime, duration });
+        }
+    });
+      
+    const finalLoop = [...baseLoop, ...newLoopEvents]
+        .sort((a, b) => a.startTime - b.startTime);
+
+    timedEventsRef.current = [];
+    setCountInMeasure(0);
+    
+    if (finalLoop.length > 0) {
+        setLoop(finalLoop);
+        
+        const timeSinceRecordingStart = (preciseStopTime ?? audioContext.currentTime) - recordingStartTimeRef.current;
+        lastProgressRef.current = timeSinceRecordingStart % loopDuration;
+        loopPlaybackStartTimeRef.current = recordingStartTimeRef.current;
+        nextEventIndexRef.current = 0;
+        setLoopState('playing');
+    } else {
+        setLoop([]);
+        setLoopState('idle');
+        setProgress(0);
+        lastProgressRef.current = 0;
+    }
+  }, [audioContext, loopState, loopDuration, loop]);
+
+  useEffect(() => {
+    const { beat, time } = beatInfo;
+    if (loopState !== 'countingIn' || !waitingForDownbeatRef.current || beat !== 1 || !audioContext) {
+        return;
+    }
+
+    if (countInMeasuresRemainingRef.current > 1) {
+        countInMeasuresRemainingRef.current -= 1;
+        setCountInMeasure(prev => prev + 1);
+    } else {
+        const startTime = time;
+        recordingStartTimeRef.current = startTime;
+        recordingStopTimeRef.current = startTime + loopDuration;
+        loopPlaybackStartTimeRef.current = startTime;
+        
+        const nextState = loop.length > 0 ? 'overdubbing' : 'recording';
+        setLoopState(nextState);
+        waitingForDownbeatRef.current = false;
+        setCountInMeasure(0);
+    }
+  }, [beatInfo, loopState, audioContext, loop.length, loopDuration]);
+
   useEffect(() => {
     if (loopState === 'idle' || loopState === 'countingIn' || !audioContext) {
         cancelAnimationFrame(schedulerFrameRef.current);
@@ -112,28 +141,24 @@ export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, current
     const scheduler = () => {
         const currentTime = audioContext.currentTime;
 
-        // 1. Automatic Recording Stop Check
         if ((loopState === 'recording' || loopState === 'overdubbing') && currentTime >= recordingStopTimeRef.current) {
             stopRecording(recordingStopTimeRef.current);
-            return; // State change will cancel this animation frame loop.
+            return;
         }
         
-        // 2. Playback Scheduling
         if ((loopState === 'playing' || loopState === 'overdubbing') && loop.length > 0) {
             const timeIntoPlayback = currentTime - loopPlaybackStartTimeRef.current;
             const currentLoopProgress = timeIntoPlayback % loopDuration;
 
-            // More robust wrap detection: if progress has gone down, we've looped.
             if (currentLoopProgress < lastProgressRef.current) {
                 nextEventIndexRef.current = 0;
             }
             lastProgressRef.current = currentLoopProgress;
 
-            // Schedule all notes within the upcoming scheduling window
             while (nextEventIndexRef.current < loop.length) {
                 const event = loop[nextEventIndexRef.current];
                 let timeUntilEvent = event.startTime - currentLoopProgress;
-                if (timeUntilEvent < -0.001) { // Add tolerance for floating point
+                if (timeUntilEvent < -0.001) {
                     timeUntilEvent += loopDuration;
                 }
                 const absoluteEventTime = currentTime + timeUntilEvent;
@@ -143,12 +168,11 @@ export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, current
                     onStopNote(event.note, absoluteEventTime + event.duration);
                     nextEventIndexRef.current++;
                 } else {
-                    break; // Event is outside the window, wait for next scheduler call
+                    break;
                 }
             }
         }
         
-        // 3. Progress Bar Update
         if (loopPlaybackStartTimeRef.current > 0) {
             const elapsed = currentTime - loopPlaybackStartTimeRef.current;
             setProgress((elapsed % loopDuration) / loopDuration);
@@ -166,26 +190,21 @@ export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, current
 
   const noteOn = useCallback((note: string) => {
       if (!audioContext || (loopState !== 'recording' && loopState !== 'overdubbing')) return;
-      pendingNotesRef.current.set(note, audioContext.currentTime);
+      timedEventsRef.current.push({
+          note,
+          time: audioContext.currentTime - recordingStartTimeRef.current,
+          type: 'on',
+      });
   }, [audioContext, loopState]);
 
   const noteOff = useCallback((note: string) => {
     if (!audioContext || (loopState !== 'recording' && loopState !== 'overdubbing')) return;
-    const startTime = pendingNotesRef.current.get(note);
-    if (startTime !== undefined) {
-        const endTime = audioContext.currentTime;
-        const duration = endTime - startTime;
-        if (duration > 0.01) {
-            const loopRelativeStartTime = startTime - recordingStartTimeRef.current;
-            // Only add the note if it started within the current loop's duration
-            if (loopRelativeStartTime >= 0 && loopRelativeStartTime < loopDuration) {
-                const truncatedDuration = Math.min(duration, loopDuration - loopRelativeStartTime);
-                recordedEventsRef.current.push({ note, startTime: loopRelativeStartTime, duration: truncatedDuration });
-            }
-        }
-        pendingNotesRef.current.delete(note);
-    }
-  }, [audioContext, loopState, loopDuration]);
+    timedEventsRef.current.push({
+        note,
+        time: audioContext.currentTime - recordingStartTimeRef.current,
+        type: 'off',
+    });
+  }, [audioContext, loopState]);
   
   const startRecording = () => {
     if (!isMetronomePlaying || !audioContext) return;
@@ -197,18 +216,19 @@ export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, current
 
     if (loopState === 'idle') {
       setLoop([]);
-      recordedEventsRef.current = [];
-      pendingNotesRef.current.clear();
+      timedEventsRef.current = [];
     }
     
     setLoopState('countingIn');
-    countInMeasuresRemainingRef.current = 2; // Set 2-measure count-in
+    countInMeasuresRemainingRef.current = 2;
+    setCountInMeasure(1);
     waitingForDownbeatRef.current = true;
   };
 
   const togglePlayback = () => {
       if (loopState === 'playing' || loopState === 'overdubbing') {
           setLoopState('idle');
+          setCountInMeasure(0);
           onStopAllLoopNotes();
       } else if (loop.length > 0 && audioContext) {
           loopPlaybackStartTimeRef.current = audioContext.currentTime;
@@ -223,9 +243,9 @@ export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, current
           onStopAllLoopNotes();
       }
       setLoopState('idle');
+      setCountInMeasure(0);
       setLoop([]);
-      recordedEventsRef.current = [];
-      pendingNotesRef.current.clear();
+      timedEventsRef.current = [];
       lastProgressRef.current = 0;
       setProgress(0);
   };
@@ -239,5 +259,6 @@ export const useLooper = ({ bpm, bars, audioContext, isMetronomePlaying, current
     clearLoop,
     noteOn,
     noteOff,
+    countInMeasure,
   };
 };

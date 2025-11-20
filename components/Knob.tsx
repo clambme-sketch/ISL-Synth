@@ -19,7 +19,7 @@ export const SliderControl: React.FC<SliderControlProps> = ({ label, value, min,
   return (
     <Tooltip show={showTooltip} text={tooltipText || defaultTooltipText}>
         <div className="flex flex-col items-center justify-end gap-2 h-full">
-          <div className="relative flex-grow w-full flex items-center justify-center">
+          <div className="relative flex-grow w-full flex items-center justify-center min-h-[100px]">
             <input
               type="range"
               min={min}

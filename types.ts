@@ -14,18 +14,29 @@ export interface OscillatorSettings {
   octave: number; // octave offset (-2 to +2)
 }
 
+export interface SampleSettings {
+    trimStart: number; // 0.0 to 1.0
+    trimEnd: number; // 0.0 to 1.0
+    loop: boolean;
+}
+
 export type LFOTarget = 'pitch' | 'filter' | 'amplitude';
 
 export interface LFOSettings {
   on: boolean;
   waveform: WaveformType;
-  rate: number; // in Hz
+  rate: number; // in Hz (or Ratio if keySync is true)
   depth: number; // 0 to 1
   target: LFOTarget;
+  retrigger: boolean;
+  keySync?: boolean; // If true, rate is a ratio relative to note frequency (FM)
 }
+
+export type PresetCategory = 'Simple' | 'Subtractive' | 'AM' | 'Sampling' | 'FM';
 
 export interface SynthPreset {
   name: string;
+  category: PresetCategory;
   adsr: ADSREnvelope;
   osc1: OscillatorSettings;
   osc2: OscillatorSettings;
@@ -51,6 +62,7 @@ export interface SynthSettings {
     osc1: OscillatorSettings;
     osc2: OscillatorSettings;
     mix: number;
+    sampleVolume?: number;
 }
 
 export type ChordMode = 'major' | 'dominant7' | 'minor' | 'diminished' | 'augmented' | 'diatonic';

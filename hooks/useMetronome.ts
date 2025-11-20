@@ -7,11 +7,16 @@ interface UseMetronomeProps {
     audioContext: AudioContext | null;
 }
 
+export interface BeatInfo {
+    beat: 1 | 2 | 3 | 4;
+    time: number;
+}
+
 export const useMetronome = ({ audioContext }: UseMetronomeProps) => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [bpm, setBpm] = useState(90);
     const [tick, setTick] = useState(false);
-    const [currentBeat, setCurrentBeat] = useState<1 | 2 | 3 | 4>(4);
+    const [beatInfo, setBeatInfo] = useState<BeatInfo>({ beat: 4, time: 0 });
 
     const timerRef = useRef<number | null>(null);
     const nextNoteTimeRef = useRef(0);
@@ -22,7 +27,7 @@ export const useMetronome = ({ audioContext }: UseMetronomeProps) => {
 
         const nextBeat = (lastBeatRef.current % 4) + 1 as 1 | 2 | 3 | 4;
         lastBeatRef.current = nextBeat;
-        setCurrentBeat(nextBeat);
+        setBeatInfo({ beat: nextBeat, time: nextNoteTimeRef.current });
 
         const clickOsc = audioContext.createOscillator();
         const clickGain = audioContext.createGain();
@@ -60,7 +65,7 @@ export const useMetronome = ({ audioContext }: UseMetronomeProps) => {
             }
             nextNoteTimeRef.current = audioContext.currentTime;
             lastBeatRef.current = 4;
-            setCurrentBeat(4);
+            setBeatInfo({ beat: 4, time: audioContext.currentTime });
             scheduler();
         } else {
             if (timerRef.current) {
@@ -88,6 +93,6 @@ export const useMetronome = ({ audioContext }: UseMetronomeProps) => {
         setBpm,
         toggleMetronome,
         metronomeTick: tick,
-        currentBeat
+        beatInfo
     };
 };

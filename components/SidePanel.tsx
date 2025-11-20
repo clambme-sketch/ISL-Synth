@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface SidePanelProps {
@@ -6,6 +7,8 @@ interface SidePanelProps {
     pitchBend: number;
     maxPitchBend: number;
     sustainOn: boolean;
+    masterVolume: number;
+    onMasterVolumeChange: (volume: number) => void;
 }
 
 const OCTAVE_COLORS = [
@@ -22,6 +25,8 @@ export const SidePanel: React.FC<SidePanelProps> = ({
     pitchBend,
     maxPitchBend,
     sustainOn,
+    masterVolume,
+    onMasterVolumeChange,
 }) => {
     const bendPercentage = (pitchBend / maxPitchBend) * 100;
 
@@ -103,6 +108,23 @@ export const SidePanel: React.FC<SidePanelProps> = ({
                     }`}
                 ></div>
                 <span className="text-xs font-mono text-synth-gray-600 mt-1">(SPACEBAR)</span>
+            </div>
+
+            {/* Master Volume */}
+            <div className="flex flex-col items-center gap-2 pt-4 border-t border-synth-gray-700/50 w-full">
+                <div className="flex justify-between w-full px-1">
+                    <span className="text-xs font-medium text-synth-gray-500 tracking-wider">MASTER VOLUME</span>
+                    <span className="text-xs font-mono text-synth-gray-400">{(masterVolume * 100).toFixed(0)}%</span>
+                </div>
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={masterVolume}
+                    onChange={(e) => onMasterVolumeChange(parseFloat(e.target.value))}
+                    className="horizontal-slider w-full"
+                />
             </div>
         </div>
     );

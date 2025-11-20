@@ -1,13 +1,12 @@
 
-import type { ADSREnvelope, OscillatorSettings, LoopEvent, SynthSettings, FilterSettings, DelaySettings, ReverbSettings, SaturationSettings, PhaserSettings, ChorusSettings, LFOSettings, LFOTarget } from '../types';
-import { NOTE_FREQUENCIES, JUST_INTONATION_RATIOS, ALL_NOTES_CHROMATIC } from '../constants';
+import type { ADSREnvelope, OscillatorSettings, LoopEvent, SynthSettings, FilterSettings, DelaySettings, ReverbSettings, SaturationSettings, PhaserSettings, ChorusSettings, LFOSettings, LFOTarget, PresetCategory, SampleSettings } from '../types';
+import { NOTE_FREQUENCIES, JUST_INTONATION_RATIOS, ALL_NOTES_CHROMATIC, DEFAULT_LFO_SETTINGS } from '../constants';
 
 interface ActiveNode {
-  osc1: OscillatorNode;
-  osc2: OscillatorNode;
+  sources: (OscillatorNode | AudioBufferSourceNode | GainNode)[]; 
   adsrGain: GainNode;
-  osc1Settings: OscillatorSettings;
-  osc2Settings: OscillatorSettings;
+  osc1Settings?: OscillatorSettings;
+  osc2Settings?: OscillatorSettings;
   rootNote: string;
 }
 
@@ -22,11 +21,15 @@ export class AudioEngine {
   private noteToIndexMap: Map<string, number> = new Map();
   private currentPitchBend = 0;
   private retuneTimeout: number | null = null;
+  private sampleBuffer: AudioBuffer | null = null;
+  private sampleSettings: SampleSettings = { trimStart: 0, trimEnd: 1.0, loop: false };
 
   // Audio routing nodes
   private masterGain: GainNode;
+  private sampleBus: GainNode; // Dedicated bus for samples to control volume
   private finalFxInput: GainNode; // Input to parallel delay/reverb
   private dryGain: GainNode;
+  private outputGain: GainNode; // Final master volume control
 
   // Effects nodes
   private filterNode: BiquadFilterNode;
@@ -67,6 +70,7 @@ export class AudioEngine {
   private lfoGain: GainNode;
   private tremoloGain: GainNode;
   private lfoTarget: LFOTarget | 'none' = 'none';
+  private lfoSettings: LFOSettings = DEFAULT_LFO_SETTINGS;
 
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -77,13 +81,15 @@ export class AudioEngine {
     
     // --- MASTER & ROUTING NODES ---
     this.masterGain = this.audioContext.createGain();
+    this.sampleBus = this.audioContext.createGain();
     this.finalFxInput = this.audioContext.createGain();
     this.dryGain = this.audioContext.createGain();
+    this.outputGain = this.audioContext.createGain();
 
     // --- LFO & MODULATION NODES ---
     this.tremoloGain = this.audioContext.createGain();
-    this.lfo = this.audioContext.createOscillator();
     this.lfoGain = this.audioContext.createGain(); // Depth control
+    this.lfo = this.audioContext.createOscillator();
     this.lfo.connect(this.lfoGain);
     this.lfo.start();
 
@@ -138,12 +144,12 @@ export class AudioEngine {
 
     // --- MASTER OUTPUT NODES ---
     this.masterCompressor = this.audioContext.createDynamicsCompressor();
-    // Recalibrated to act as a transparent safety limiter, only catching the loudest peaks.
-    this.masterCompressor.threshold.setValueAtTime(-2.0, this.audioContext.currentTime); // Higher threshold to only catch peaks
-    this.masterCompressor.knee.setValueAtTime(12, this.audioContext.currentTime);    // Keep a soft knee for transparency
-    this.masterCompressor.ratio.setValueAtTime(12.0, this.audioContext.currentTime);   // Strong ratio for limiting
-    this.masterCompressor.attack.setValueAtTime(0.003, this.audioContext.currentTime); // Fast attack to prevent clipping
-    this.masterCompressor.release.setValueAtTime(0.25, this.audioContext.currentTime); // Fairly quick release
+    // Tuned to act more like a limiter for safety against sample volume
+    this.masterCompressor.threshold.setValueAtTime(-3.0, this.audioContext.currentTime);
+    this.masterCompressor.knee.setValueAtTime(0, this.audioContext.currentTime); // Harder knee for limiting
+    this.masterCompressor.ratio.setValueAtTime(20.0, this.audioContext.currentTime); // Higher ratio for limiting
+    this.masterCompressor.attack.setValueAtTime(0.001, this.audioContext.currentTime); // Fast attack
+    this.masterCompressor.release.setValueAtTime(0.1, this.audioContext.currentTime);
 
     this.analyserX = this.audioContext.createAnalyser();
     this.analyserY = this.audioContext.createAnalyser();
@@ -151,19 +157,18 @@ export class AudioEngine {
     this.allpassFilter.type = 'allpass';
 
     // --- AUDIO ROUTING ---
-    // Voices -> Master Gain -> Tremolo Gain (for LFO) -> Filter -> ...
     this.masterGain.connect(this.tremoloGain);
+    this.sampleBus.connect(this.masterGain); // Route samples into master gain
+    
     this.tremoloGain.connect(this.filterNode);
     this.filterNode.connect(this.saturationIn);
     
-    // Saturation dry/wet path
     this.saturationIn.connect(this.saturationDry);
     this.saturationIn.connect(this.saturationNode);
     this.saturationNode.connect(this.saturationWet);
     this.saturationDry.connect(this.phaserIn);
     this.saturationWet.connect(this.phaserIn);
     
-    // Phaser dry/wet path
     this.phaserIn.connect(this.phaserDry);
     this.phaserIn.connect(this.phaserFilters[0]);
     this.phaserFilters.forEach((filter, i) => {
@@ -175,33 +180,32 @@ export class AudioEngine {
     this.phaserDry.connect(this.chorusIn);
     this.phaserWet.connect(this.chorusIn);
     
-    // Chorus dry/wet path
     this.chorusIn.connect(this.chorusDry);
     this.chorusIn.connect(this.chorusDelay);
     this.chorusDelay.connect(this.chorusWet);
     this.chorusDry.connect(this.finalFxInput);
     this.chorusWet.connect(this.finalFxInput);
 
-    // Final FX Input splits to parallel delay/reverb and main dry path
     this.finalFxInput.connect(this.dryGain);
     this.finalFxInput.connect(this.delayNode);
     this.finalFxInput.connect(this.reverbNode);
     
-    // Delay feedback loop
     this.delayNode.connect(this.delayFeedback);
     this.delayFeedback.connect(this.delayNode);
     
-    // Parallel paths merge at compressor
     this.dryGain.connect(this.masterCompressor);
     this.delayNode.connect(this.delayWetGain);
     this.delayWetGain.connect(this.masterCompressor);
     this.reverbNode.connect(this.reverbWetGain);
     this.reverbWetGain.connect(this.masterCompressor);
     
-    // Compressor -> Analysers -> Destination
-    this.masterCompressor.connect(this.analyserX);
+    // Output Routing
+    this.masterCompressor.connect(this.outputGain);
+    this.outputGain.connect(this.analyserX);
     this.analyserX.connect(this.audioContext.destination);
-    this.masterCompressor.connect(this.allpassFilter);
+    
+    // Route for Y-axis scope (Phase)
+    this.outputGain.connect(this.allpassFilter);
     this.allpassFilter.connect(this.analyserY);
   }
 
@@ -233,6 +237,57 @@ export class AudioEngine {
     return curve;
   }
 
+  // Helper: Finds the nearest positive-going zero crossing to avoid clicks
+  private findNearestPositiveZeroCrossing(data: Float32Array, index: number, window: number): number {
+      const start = Math.max(0, index - window);
+      const end = Math.min(data.length - 1, index + window);
+      let bestIndex = index;
+      let minDiff = Infinity;
+
+      // Directional search for rising edge crossing: neg -> pos
+      for (let i = start; i < end - 1; i++) {
+          if (data[i] <= 0 && data[i + 1] > 0) {
+              const diff = Math.abs(i - index);
+              if (diff < minDiff) {
+                  minDiff = diff;
+                  bestIndex = i;
+              }
+          }
+      }
+      
+      // Fallback if no rising edge found: just closest to zero amplitude
+      if (minDiff === Infinity) {
+          let minAmp = 1.0;
+          for (let i = start; i < end; i++) {
+              const amp = Math.abs(data[i]);
+              if (amp < minAmp) {
+                  minAmp = amp;
+                  bestIndex = i;
+              }
+          }
+      }
+
+      return bestIndex;
+  }
+  
+  public async setSample(buffer: AudioBuffer) {
+      this.sampleBuffer = buffer;
+  }
+  
+  public updateSampleSettings(start: number, end: number, loop: boolean) {
+      this.sampleSettings = { trimStart: start, trimEnd: end, loop };
+  }
+
+  public setSampleVolume(volume: number) {
+      const now = this.audioContext.currentTime;
+      this.sampleBus.gain.setTargetAtTime(volume, now, 0.02);
+  }
+  
+  public setMasterVolume(volume: number) {
+      const now = this.audioContext.currentTime;
+      this.outputGain.gain.setTargetAtTime(volume, now, 0.02);
+  }
+
   public getAudioContext(): AudioContext {
     return this.audioContext;
   }
@@ -240,9 +295,10 @@ export class AudioEngine {
   public getLiveFrequencies(): Map<string, number> {
     const frequencies = new Map<string, number>();
     this.activeNodes.forEach((node, noteName) => {
-        // We can just get the frequency of the first oscillator,
-        // as they should be tuned relative to each other.
-        frequencies.set(noteName, node.osc1.frequency.value);
+        const source = node.sources[0];
+        if (source instanceof OscillatorNode) {
+            frequencies.set(noteName, source.frequency.value);
+        }
     });
     return frequencies;
   }
@@ -262,55 +318,193 @@ export class AudioEngine {
     }, 5);
   }
 
-  public playNote( note: string, envelope: ADSREnvelope, osc1Settings: OscillatorSettings, osc2Settings: OscillatorSettings, mix: number, time?: number, rootNote?: string ): void {
+  public playNote(
+    note: string, 
+    envelope: ADSREnvelope, 
+    osc1Settings: OscillatorSettings, 
+    osc2Settings: OscillatorSettings, 
+    mix: number, 
+    time?: number, 
+    rootNote?: string,
+    category?: PresetCategory
+  ): void {
     if (this.audioContext.state === 'suspended') this.audioContext.resume();
-    if (this.activeNodes.has(note)) this.stopNote(note, 0.01); 
 
-    const freq1 = this.getFrequencyForNote(note, osc1Settings.octave);
-    const freq2 = this.getFrequencyForNote(note, osc2Settings.octave);
-    if (!freq1 || !freq2) return;
+    // Global LFO Retrigger (if not key sync)
+    if (this.lfoSettings.on && this.lfoSettings.retrigger && !this.lfoSettings.keySync && this.activeNodes.size === 0) {
+        const retriggerTime = time ?? this.audioContext.currentTime;
+        this.lfo.stop();
+        this.lfo.disconnect(this.lfoGain);
+
+        this.lfo = this.audioContext.createOscillator();
+        this.lfo.type = this.lfoSettings.waveform;
+        this.lfo.frequency.setValueAtTime(this.lfoSettings.rate, retriggerTime);
+
+        this.lfo.connect(this.lfoGain);
+        this.lfo.start(retriggerTime);
+    }
+
+    if (this.activeNodes.has(note)) this.stopNote(note, 0.01); 
 
     const now = time ?? this.audioContext.currentTime;
     const finalRootNote = rootNote || note;
-
-    const osc1 = this.audioContext.createOscillator();
-    osc1.type = osc1Settings.waveform;
-    osc1.frequency.setValueAtTime(freq1, now);
-    osc1.detune.setValueAtTime(this.currentPitchBend + osc1Settings.detune, now);
-
-    const osc2 = this.audioContext.createOscillator();
-    osc2.type = osc2Settings.waveform;
-    osc2.frequency.setValueAtTime(freq2, now);
-    osc2.detune.setValueAtTime(this.currentPitchBend + osc2Settings.detune, now);
     
-    if (this.lfoTarget === 'pitch') {
-        this.lfoGain.connect(osc1.detune);
-        this.lfoGain.connect(osc2.detune);
-    }
-    
-    const mix1Gain = this.audioContext.createGain();
-    mix1Gain.gain.value = 1 - mix;
-    const mix2Gain = this.audioContext.createGain();
-    mix2Gain.gain.value = mix;
-
     const adsrGain = this.audioContext.createGain();
     adsrGain.gain.setValueAtTime(0, now);
+    
+    // Routing Decision: Samples go to SampleBus, Synths go to MasterGain
+    if (category === 'Sampling') {
+        adsrGain.connect(this.sampleBus);
+    } else {
+        adsrGain.connect(this.masterGain);
+    }
 
-    osc1.connect(mix1Gain);
-    osc2.connect(mix2Gain);
-    mix1Gain.connect(adsrGain);
-    mix2Gain.connect(adsrGain);
-    adsrGain.connect(this.masterGain);
+    // --- SAMPLING MODE ---
+    if (category === 'Sampling' && this.sampleBuffer) {
+         const source = this.audioContext.createBufferSource();
+         source.buffer = this.sampleBuffer;
+         
+         // Pitch calculation assuming C4 (MIDI 60) is the root of the sample
+         const rootMidi = 60; 
+         const noteMidi = this.noteToIndexMap.get(note) ? this.noteToIndexMap.get(note)! + 24 : 60;
+         const playbackRate = Math.pow(2, (noteMidi - rootMidi) / 12);
+         
+         source.playbackRate.value = playbackRate;
+         source.connect(adsrGain);
+         
+         // Zero-Crossing Snap Logic to prevent clicks
+         const bufferLen = this.sampleBuffer.length;
+         const channelData = this.sampleBuffer.getChannelData(0);
+         const searchWindow = 500; // approx 10ms at 44.1k
+         
+         // Calculate raw indices from 0-1 trim values
+         const rawStartIdx = Math.floor(this.sampleSettings.trimStart * bufferLen);
+         const rawEndIdx = Math.floor(Math.max(this.sampleSettings.trimEnd, this.sampleSettings.trimStart + 0.001) * bufferLen);
+         
+         // Find safe zero crossings
+         const safeStartIdx = this.findNearestPositiveZeroCrossing(channelData, rawStartIdx, searchWindow);
+         const safeEndIdx = this.findNearestPositiveZeroCrossing(channelData, rawEndIdx, searchWindow);
+         
+         const safeStartTime = safeStartIdx / this.sampleBuffer.sampleRate;
+         const safeEndTime = safeEndIdx / this.sampleBuffer.sampleRate;
+         
+         if (this.sampleSettings.loop) {
+             source.loop = true;
+             source.loopStart = safeStartTime;
+             source.loopEnd = safeEndTime;
+             // Start at loopStart to ensure the phase matches the loop return
+             source.start(now, safeStartTime);
+         } else {
+             // For one-shot, we still use safe start, but duration is derived from safe endpoints
+             const duration = safeEndTime - safeStartTime;
+             source.start(now, safeStartTime, duration);
+         }
+         
+         this.activeNodes.set(note, { sources: [source], adsrGain, rootNote: finalRootNote });
+    } 
+    // --- SYNTH MODE (Subtractive, AM, FM) ---
+    else {
+        const freq1 = this.getFrequencyForNote(note, osc1Settings.octave);
+        const freq2 = this.getFrequencyForNote(note, osc2Settings.octave);
+        if (!freq1 || !freq2) return;
+
+        const osc1 = this.audioContext.createOscillator();
+        osc1.type = osc1Settings.waveform;
+        osc1.frequency.setValueAtTime(freq1, now);
+        osc1.detune.setValueAtTime(this.currentPitchBend + osc1Settings.detune, now);
+
+        const osc2 = this.audioContext.createOscillator();
+        osc2.type = osc2Settings.waveform;
+        osc2.frequency.setValueAtTime(freq2, now);
+        osc2.detune.setValueAtTime(this.currentPitchBend + osc2Settings.detune, now);
+        
+        const mix1Gain = this.audioContext.createGain();
+        mix1Gain.gain.value = 1 - mix;
+        const mix2Gain = this.audioContext.createGain();
+        mix2Gain.gain.value = mix;
+
+        // Create a specific gain node for AM/Tremolo
+        const amGain = this.audioContext.createGain();
+        // Default to unity gain. Logic below modifies this for Ring Mod.
+        amGain.gain.value = 1.0; 
+
+        osc1.connect(mix1Gain);
+        osc2.connect(mix2Gain);
+        mix1Gain.connect(amGain);
+        mix2Gain.connect(amGain);
+        amGain.connect(adsrGain);
+
+        const sources: (OscillatorNode | GainNode)[] = [osc1, osc2, amGain];
+
+        // --- LFO MODULATION ---
+        if (this.lfoSettings.on) {
+            // KEY SYNC FM (Linear Frequency Modulation)
+            // True FM: Modulator affects Frequency directly, not Pitch (logarithmic).
+            if (this.lfoSettings.keySync && this.lfoTarget === 'pitch') {
+                const mod = this.audioContext.createOscillator();
+                mod.type = this.lfoSettings.waveform;
+                const modRatio = this.lfoSettings.rate; 
+                mod.frequency.setValueAtTime(freq1 * modRatio, now);
+                
+                const modGain = this.audioContext.createGain();
+                // Boosted Index: Allow deep modulation for rich "Digital FM" sounds.
+                // Index of 3-4 creates rich sidebands (like bells/brass).
+                // The 'depth' slider (0-1) now maps to Index 0 to 4.
+                const MAX_FM_INDEX = 4.0;
+                const modulationIndex = this.lfoSettings.depth * MAX_FM_INDEX; 
+                modGain.gain.setValueAtTime(modulationIndex * freq1, now); 
+                
+                mod.connect(modGain);
+                modGain.connect(osc1.frequency); 
+                if (!osc1Settings.detune && !osc2Settings.detune) {
+                     modGain.connect(osc2.frequency); 
+                }
+                mod.start(now);
+                sources.push(mod);
+            } 
+            // KEY SYNC AM (Polyphonic AM / Ring Mod)
+            // True AM: Interpolates from Tremolo -> AM -> Ring Mod
+            else if (this.lfoSettings.keySync && this.lfoTarget === 'amplitude') {
+                const mod = this.audioContext.createOscillator();
+                mod.type = this.lfoSettings.waveform;
+                const modRatio = this.lfoSettings.rate;
+                mod.frequency.setValueAtTime(freq1 * modRatio, now);
+
+                const modGain = this.audioContext.createGain();
+                modGain.gain.setValueAtTime(this.lfoSettings.depth, now);
+
+                // TRUE AM LOGIC:
+                // As depth increases, we lower the carrier bias (DC offset).
+                // Depth 0.0 -> Bias 1.0, Mod 0.0 (Unmodulated)
+                // Depth 0.5 -> Bias 0.5, Mod 0.5 (100% AM, unipolar)
+                // Depth 1.0 -> Bias 0.0, Mod 1.0 (Ring Modulation, bipolar)
+                const carrierBias = 1.0 - this.lfoSettings.depth;
+                amGain.gain.setValueAtTime(carrierBias, now);
+
+                mod.connect(modGain);
+                modGain.connect(amGain.gain);
+                mod.start(now);
+                sources.push(mod);
+            }
+            // STANDARD LFO (Global Pitch/Detune Modulation)
+            else if (this.lfoTarget === 'pitch' && !this.lfoSettings.keySync) {
+                this.lfoGain.connect(osc1.detune);
+                this.lfoGain.connect(osc2.detune);
+            }
+            // Standard Global LFO (Amplitude/Filter) is handled in updateLFO globally
+        }
+
+        osc1.start(now);
+        osc2.start(now);
+        
+        this.activeNodes.set(note, { sources, adsrGain, osc1Settings, osc2Settings, rootNote: finalRootNote });
+    }
 
     const { attack, decay, sustain } = envelope;
-    const peakGain = 0.25; // Reduced from 0.5 to provide more headroom for polyphony
+    const peakGain = 0.25;
     adsrGain.gain.linearRampToValueAtTime(peakGain, now + attack);
     adsrGain.gain.linearRampToValueAtTime(sustain * peakGain, now + attack + decay);
-    
-    osc1.start(now);
-    osc2.start(now);
 
-    this.activeNodes.set(note, { osc1, osc2, adsrGain, osc1Settings, osc2Settings, rootNote: finalRootNote });
     this.scheduleRetune();
   }
 
@@ -318,7 +512,7 @@ export class AudioEngine {
     const activeNode = this.activeNodes.get(note);
     if (!activeNode) return;
 
-    const { osc1, osc2, adsrGain } = activeNode;
+    const { sources, adsrGain } = activeNode;
     const now = time ?? this.audioContext.currentTime;
 
     adsrGain.gain.cancelScheduledValues(now);
@@ -328,8 +522,12 @@ export class AudioEngine {
     adsrGain.gain.setTargetAtTime(0, now, timeConstant);
 
     const stopTime = now + release + 0.05;
-    osc1.stop(stopTime);
-    osc2.stop(stopTime);
+    sources.forEach(source => {
+        if (source instanceof OscillatorNode || source instanceof AudioBufferSourceNode) {
+            source.stop(stopTime);
+        }
+        // Gain nodes don't need 'stop', they will be garbage collected
+    });
 
     const cleanupTimeout = (stopTime - this.audioContext.currentTime) * 1000;
     setTimeout(() => {
@@ -348,8 +546,12 @@ export class AudioEngine {
     this.currentPitchBend = cents;
     const now = this.audioContext.currentTime;
     this.activeNodes.forEach((node) => {
-        node.osc1.detune.setTargetAtTime(cents + node.osc1Settings.detune, now, 0.01);
-        node.osc2.detune.setTargetAtTime(cents + node.osc2Settings.detune, now, 0.01);
+        if (node.osc1Settings && node.osc2Settings) {
+             const s1 = node.sources[0];
+             const s2 = node.sources[1];
+             if(s1 instanceof OscillatorNode) s1.detune.setTargetAtTime(cents + node.osc1Settings.detune, now, 0.01);
+             if(s2 instanceof OscillatorNode) s2.detune.setTargetAtTime(cents + node.osc2Settings.detune, now, 0.01);
+        }
     });
   }
   
@@ -360,58 +562,57 @@ export class AudioEngine {
   }
   
   public updateLFO(settings: LFOSettings) {
+    this.lfoSettings = settings;
     const now = this.audioContext.currentTime;
+    const previousTarget = this.lfoTarget;
 
-    // First, disconnect from any previous target to prevent conflicts
-    if (this.lfoTarget === 'filter') {
-        this.lfoGain.disconnect(this.filterNode.frequency);
-    } else if (this.lfoTarget === 'amplitude') {
-        this.lfoGain.disconnect(this.tremoloGain.gain);
-        this.tremoloGain.gain.cancelScheduledValues(now);
-        this.tremoloGain.gain.setTargetAtTime(1.0, now, 0.01); // Return to normal volume
-    } else if (this.lfoTarget === 'pitch') {
-        this.activeNodes.forEach(node => {
-            try { this.lfoGain.disconnect(node.osc1.detune); } catch (e) {}
-            try { this.lfoGain.disconnect(node.osc2.detune); } catch (e) {}
-        });
-    }
-
-    this.lfoTarget = 'none';
-
-    if (!settings.on) {
-        return; // LFO is off, so we're done
-    }
-
-    // Set LFO parameters
+    // Update Global LFO
     this.lfo.type = settings.waveform;
     this.lfo.frequency.setTargetAtTime(settings.rate, now, 0.02);
-    this.lfoTarget = settings.target;
 
-    // Connect to the new target with appropriate depth scaling
-    switch (settings.target) {
-        case 'filter':
-            // Modulate frequency by up to 2 octaves (depth * 2400 cents)
-            this.lfoGain.gain.setTargetAtTime(settings.depth * 2400, now, 0.02);
-            this.lfoGain.connect(this.filterNode.frequency);
-            break;
-        case 'amplitude':
-            // LFO is bipolar [-1, 1]. Gain param is audiorate.
-            // tremoloGain base is 1. We connect LFO to it, so gain becomes 1 + [-depth, +depth].
-            // To prevent clipping and silence, the depth value in the UI should be kept < 1.
-            this.lfoGain.gain.setTargetAtTime(settings.depth, now, 0.02);
-            this.tremoloGain.gain.setValueAtTime(1.0, now); // Ensure baseline is 1
-            this.lfoGain.connect(this.tremoloGain.gain);
-            break;
-        case 'pitch':
-            // Modulate detune by up to 1 semitone (depth * 100 cents)
-            this.lfoGain.gain.setTargetAtTime(settings.depth * 100, now, 0.02);
-            this.activeNodes.forEach(node => {
-                this.lfoGain.connect(node.osc1.detune);
-                this.lfoGain.connect(node.osc2.detune);
-            });
-            break;
+    // Optimize updates if target hasn't changed
+    if (settings.on && previousTarget === settings.target && !settings.keySync) {
+        if (settings.target === 'filter') this.lfoGain.gain.setTargetAtTime(settings.depth * 2400, now, 0.02);
+        if (settings.target === 'amplitude') this.lfoGain.gain.setTargetAtTime(settings.depth, now, 0.02);
+        if (settings.target === 'pitch') this.lfoGain.gain.setTargetAtTime(settings.depth * 3600, now, 0.02);
+        return;
+    }
+
+    // Disconnect old targets
+    this.lfoGain.disconnect();
+    
+    if (previousTarget === 'amplitude') {
+        this.tremoloGain.gain.cancelScheduledValues(now);
+        this.tremoloGain.gain.setTargetAtTime(1.0, now, 0.01);
+    }
+
+    this.lfoTarget = settings.on ? settings.target : 'none';
+
+    if (!settings.on) return;
+    
+    // If KeySync is enabled, modulation is handled per-voice in playNote. 
+    if (settings.keySync && (settings.target === 'pitch' || settings.target === 'amplitude')) {
+        return; 
+    }
+
+    // Reconnect Global Targets
+    if (settings.target === 'filter') {
+        this.lfoGain.gain.setTargetAtTime(settings.depth * 2400, now, 0.02);
+        this.lfoGain.connect(this.filterNode.frequency);
+    } else if (settings.target === 'amplitude') {
+        this.lfoGain.gain.setTargetAtTime(settings.depth, now, 0.02);
+        this.lfoGain.connect(this.tremoloGain.gain);
+    } else if (settings.target === 'pitch') {
+        this.lfoGain.gain.setTargetAtTime(settings.depth * 3600, now, 0.02);
+        this.activeNodes.forEach(node => {
+             const s1 = node.sources[0];
+             const s2 = node.sources[1];
+             if (s1 instanceof OscillatorNode) this.lfoGain.connect(s1.detune);
+             if (s2 instanceof OscillatorNode) this.lfoGain.connect(s2.detune);
+        });
     }
   }
+
 
   public updateFilter(settings: FilterSettings) {
     const now = this.audioContext.currentTime;
@@ -487,17 +688,24 @@ export class AudioEngine {
   private resetTuning(): void {
     const now = this.audioContext.currentTime;
     this.activeNodes.forEach((node, noteName) => {
-        const standardFreq1 = this.getFrequencyForNote(noteName, node.osc1Settings.octave);
-        const standardFreq2 = this.getFrequencyForNote(noteName, node.osc2Settings.octave);
-        node.osc1.frequency.setTargetAtTime(standardFreq1, now, 0.003);
-        node.osc2.frequency.setTargetAtTime(standardFreq2, now, 0.003);
+        if (node.osc1Settings && node.osc2Settings && node.sources[0] instanceof OscillatorNode) {
+            const standardFreq1 = this.getFrequencyForNote(noteName, node.osc1Settings.octave);
+            const standardFreq2 = this.getFrequencyForNote(noteName, node.osc2Settings.octave);
+            (node.sources[0] as OscillatorNode).frequency.setTargetAtTime(standardFreq1, now, 0.003);
+            if (node.sources[1] instanceof OscillatorNode) {
+                (node.sources[1] as OscillatorNode).frequency.setTargetAtTime(standardFreq2, now, 0.003);
+            }
+        }
     });
   }
   
   private tuneNote(noteName: string, rootFrequency: number, rootIndex: number, now: number): void {
     const node = this.activeNodes.get(noteName);
-    if (!node) return;
-
+    if (!node || !node.osc1Settings || !node.osc2Settings) return;
+    
+    const s1 = node.sources[0];
+    const s2 = node.sources[1];
+    
     const noteIndex = this.noteToIndexMap.get(noteName) ?? 0;
     const interval = noteIndex - rootIndex;
     const semitonesInOctave = interval % 12;
@@ -509,8 +717,8 @@ export class AudioEngine {
     const targetFreq1 = targetFrequency * Math.pow(2, node.osc1Settings.octave);
     const targetFreq2 = targetFrequency * Math.pow(2, node.osc2Settings.octave);
 
-    node.osc1.frequency.setTargetAtTime(targetFreq1, now, 0.003);
-    node.osc2.frequency.setTargetAtTime(targetFreq2, now, 0.003);
+    if (s1 instanceof OscillatorNode) s1.frequency.setTargetAtTime(targetFreq1, now, 0.003);
+    if (s2 instanceof OscillatorNode) s2.frequency.setTargetAtTime(targetFreq2, now, 0.003);
   }
 
   private retuneActiveNotes(): void {
@@ -563,7 +771,13 @@ export class AudioEngine {
 
     loop.forEach(event => {
         const { note, startTime, duration } = event;
-        const { adsr, osc1: osc1Settings, osc2: osc2Settings, mix } = settings;
+        const { adsr, osc1: osc1Settings, osc2: osc2Settings, mix, sampleVolume } = settings;
+        
+        // Sampling logic for offline rendering?
+        // Note: This simplified render currently only handles oscillators properly. 
+        // Rendering samples offline would require fetching the sample buffer which is complicated in this scope.
+        // We will keep the oscillator logic for now, but if sampleVolume is present, we could theoretically apply it if we had the sample source.
+        
         const freq1 = this.getFrequencyForNote(note, osc1Settings.octave);
         const freq2 = this.getFrequencyForNote(note, osc2Settings.octave);
         if (!freq1 || !freq2) return;
@@ -591,7 +805,7 @@ export class AudioEngine {
         adsrGain.connect(masterCompressor);
 
         const { attack, decay, sustain, release } = adsr;
-        const peakGain = 0.25; // Reduced to match live engine and prevent clipping in render
+        const peakGain = 0.25; 
         
         adsrGain.gain.linearRampToValueAtTime(peakGain, startTime + attack);
         adsrGain.gain.linearRampToValueAtTime(sustain * peakGain, startTime + attack + decay);

@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import type { LFOSettings, WaveformType, LFOTarget } from '../types';
 import { ChevronDownIcon, WaveformIcon } from './icons';
@@ -47,16 +48,43 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
     { id: 'amplitude', label: 'Amp' },
   ];
 
-  const handleToggle = (checked: boolean) => {
-    onSettingsChange(p => ({ ...p, on: checked }));
+  const handleToggle = (param: 'on' | 'retrigger' | 'keySync') => (checked: boolean) => {
+    onSettingsChange(p => ({ ...p, [param]: checked }));
   };
 
-  const handleChange = (param: keyof Omit<LFOSettings, 'on'>) => (value: any) => {
+  const handleChange = (param: keyof Omit<LFOSettings, 'on' | 'retrigger' | 'keySync'>) => (value: any) => {
     onSettingsChange(p => ({ ...p, [param]: value }));
   };
   
   const handleSliderChange = (param: 'rate' | 'depth') => (value: number) => {
       onSettingsChange(p => ({ ...p, [param]: value }));
+  }
+
+  // Adjust Slider Params based on Mode
+  const isKeySync = settings.keySync;
+  const rateLabel = isKeySync ? "Ratio" : "Rate";
+  const rateMin = isKeySync ? 0.5 : 0.1;
+  const rateMax = isKeySync ? 10.0 : 200;
+  
+  // Adjust tooltip for AM vs FM
+  let rateTooltip = "";
+  let depthTooltip = "";
+  
+  if (isKeySync) {
+      rateTooltip = `Ratio: ${settings.rate.toFixed(2)}x`;
+      if (settings.target === 'amplitude') {
+          if (settings.depth > 0.9) {
+              depthTooltip = `Depth: ${(settings.depth * 100).toFixed(0)}% (Ring Mod)`;
+          } else {
+              depthTooltip = `Depth: ${(settings.depth * 100).toFixed(0)}% (AM)`;
+          }
+      } else if (settings.target === 'pitch') {
+          depthTooltip = `Index: ${(settings.depth * 4.0).toFixed(1)}`;
+          rateTooltip += ' (FM)';
+      }
+  } else {
+      rateTooltip = `Rate: ${settings.rate.toFixed(1)} Hz`;
+      depthTooltip = `Depth: ${(settings.depth * 100).toFixed(0)}%`;
   }
 
   return (
@@ -76,20 +104,57 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
         >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-4">
-                     <label className="flex items-center cursor-pointer justify-between">
-                        <span className="text-sm text-synth-gray-500 mr-3">Enable LFO</span>
+                     <div className="flex items-center justify-between">
+                        <label htmlFor="lfo-toggle" className="text-sm text-synth-gray-500">Enable LFO</label>
                         <div className="relative">
                             <input 
                                 type="checkbox" 
                                 id="lfo-toggle"
                                 className="sr-only" 
                                 checked={settings.on} 
-                                onChange={(e) => handleToggle(e.target.checked)}
+                                onChange={(e) => handleToggle('on')(e.target.checked)}
                             />
-                            <div className={`block w-12 h-6 rounded-full transition-colors ${settings.on ? 'bg-synth-cyan-500' : 'bg-synth-gray-700'}`}></div>
+                            <div className={`block w-12 h-6 rounded-full transition-colors cursor-pointer ${settings.on ? 'bg-synth-cyan-500' : 'bg-synth-gray-700'}`}></div>
                             <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.on ? 'transform translate-x-6' : ''}`}></div>
                         </div>
-                    </label>
+                    </div>
+                     
+                    <div className="flex gap-4">
+                        <div className="flex flex-col gap-2 flex-1">
+                            <div className="flex items-center justify-between">
+                                <label htmlFor="lfo-retrigger-toggle" className="text-sm text-synth-gray-500">Retrigger</label>
+                                <div className="relative">
+                                    <input 
+                                        type="checkbox" 
+                                        id="lfo-retrigger-toggle"
+                                        className="sr-only" 
+                                        checked={settings.retrigger} 
+                                        onChange={(e) => handleToggle('retrigger')(e.target.checked)}
+                                    />
+                                    <div className={`block w-10 h-5 rounded-full transition-colors cursor-pointer ${settings.retrigger ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${settings.retrigger ? 'transform translate-x-5' : ''}`}></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="flex flex-col gap-2 flex-1">
+                            <div className="flex items-center justify-between">
+                                <label htmlFor="lfo-keysync-toggle" className="text-sm text-synth-gray-500">Key Sync (FM/AM)</label>
+                                <div className="relative">
+                                    <input 
+                                        type="checkbox" 
+                                        id="lfo-keysync-toggle"
+                                        className="sr-only" 
+                                        checked={settings.keySync || false} 
+                                        onChange={(e) => handleToggle('keySync')(e.target.checked)}
+                                    />
+                                    <div className={`block w-10 h-5 rounded-full transition-colors cursor-pointer ${settings.keySync ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${settings.keySync ? 'transform translate-x-5' : ''}`}></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className={`transition-opacity duration-300 ${!settings.on ? 'opacity-40 pointer-events-none' : ''}`}>
                         <div className="space-y-3">
                             <div>
@@ -114,8 +179,26 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
 
                 <div className={`transition-opacity duration-300 ${!settings.on ? 'opacity-40 pointer-events-none' : ''}`}>
                     <div className="grid grid-cols-2 gap-4 h-40">
-                        <SliderControl label="Rate" value={settings.rate} min={0.1} max={20} step={0.1} onChange={handleSliderChange('rate')} showTooltip={showTooltips} tooltipText={`Rate: ${settings.rate.toFixed(1)} Hz`} />
-                        <SliderControl label="Depth" value={settings.depth} min={0} max={1} step={0.01} onChange={handleSliderChange('depth')} showTooltip={showTooltips} tooltipText={`Depth: ${(settings.depth * 100).toFixed(0)}%`} />
+                        <SliderControl 
+                            label={rateLabel} 
+                            value={settings.rate} 
+                            min={rateMin} 
+                            max={rateMax} 
+                            step={0.1} 
+                            onChange={handleSliderChange('rate')} 
+                            showTooltip={showTooltips} 
+                            tooltipText={rateTooltip}
+                        />
+                        <SliderControl 
+                            label="Depth" 
+                            value={settings.depth} 
+                            min={0} 
+                            max={1} 
+                            step={0.01} 
+                            onChange={handleSliderChange('depth')} 
+                            showTooltip={showTooltips} 
+                            tooltipText={depthTooltip} 
+                        />
                     </div>
                 </div>
             </div>

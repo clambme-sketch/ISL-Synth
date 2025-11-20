@@ -1,3 +1,4 @@
+
 import type { SynthPreset, FilterSettings, ReverbSettings, DelaySettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings } from './types';
 
 export const NOTE_FREQUENCIES: { [note: string]: number } = {
@@ -54,7 +55,7 @@ export const DEFAULT_DELAY_SETTINGS: DelaySettings = { on: false, mix: 0.4, time
 export const DEFAULT_SATURATION_SETTINGS: SaturationSettings = { on: false, mix: 0.5, drive: 0.5 };
 export const DEFAULT_CHORUS_SETTINGS: ChorusSettings = { on: false, mix: 0.4, rate: 1.5, depth: 0.7 };
 export const DEFAULT_PHASER_SETTINGS: PhaserSettings = { on: false, mix: 0.5, rate: 1.2, depth: 0.8, baseFrequency: 350 };
-export const DEFAULT_LFO_SETTINGS: LFOSettings = { on: false, waveform: 'sine', rate: 5, depth: 0.2, target: 'pitch' };
+export const DEFAULT_LFO_SETTINGS: LFOSettings = { on: false, waveform: 'sine', rate: 5, depth: 0.2, target: 'pitch', retrigger: false, keySync: false };
 
 export const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 export const MAJOR_SCALE_INTERVALS = [0, 2, 4, 5, 7, 9, 11]; // W-W-H-W-W-W-H
@@ -64,9 +65,10 @@ export const MINOR_SCALE_CHORD_QUALITIES = ['minor', 'diminished', 'major', 'min
 
 
 export const SYNTH_PRESETS: SynthPreset[] = [
-  // --- Simple/Basic ---
+  // --- Simple ---
   {
     name: 'Simple Sine',
+    category: 'Simple',
     adsr: { attack: 0.02, decay: 0.3, sustain: 0.6, release: 0.4 },
     osc1: { waveform: 'sine', detune: 0, octave: 0 },
     osc2: { waveform: 'sine', detune: 0, octave: 0 },
@@ -76,6 +78,7 @@ export const SYNTH_PRESETS: SynthPreset[] = [
   },
   {
     name: 'Simple Square',
+    category: 'Simple',
     adsr: { attack: 0.02, decay: 0.1, sustain: 0.8, release: 0.2 },
     osc1: { waveform: 'square', detune: 0, octave: 0 },
     osc2: { waveform: 'square', detune: 0, octave: 0 },
@@ -84,6 +87,7 @@ export const SYNTH_PRESETS: SynthPreset[] = [
   },
   {
     name: 'Simple Saw',
+    category: 'Simple',
     adsr: { attack: 0.02, decay: 0.3, sustain: 0.6, release: 0.4 },
     osc1: { waveform: 'sawtooth', detune: 0, octave: 0 },
     osc2: { waveform: 'sawtooth', detune: 0, octave: 0 },
@@ -92,6 +96,7 @@ export const SYNTH_PRESETS: SynthPreset[] = [
   },
   {
     name: 'Simple Triangle',
+    category: 'Simple',
     adsr: { attack: 0.02, decay: 0.3, sustain: 0.6, release: 0.4 },
     osc1: { waveform: 'triangle', detune: 0, octave: 0 },
     osc2: { waveform: 'triangle', detune: 0, octave: 0 },
@@ -99,19 +104,21 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     singleOscillator: true,
   },
 
-  // --- Keys & Plucked ---
+  // --- Subtractive (Classic Synth Sounds) - 10 Presets ---
   {
     name: 'Electric Piano',
+    category: 'Subtractive',
     adsr: { attack: 0.02, decay: 0.5, sustain: 0.4, release: 0.8 },
     osc1: { waveform: 'sine', detune: -5, octave: 0 },
     osc2: { waveform: 'sine', detune: 5, octave: 1 },
     mix: 0.6,
     chorus: { on: true, mix: 0.25, rate: 0.8, depth: 0.5 },
     reverb: { on: true, mix: 0.2, decay: 1.0 },
-    lfo: { on: true, waveform: 'sine', rate: 4, depth: 0.15, target: 'amplitude' }, // Tremolo
+    lfo: { on: true, waveform: 'sine', rate: 4, depth: 0.15, target: 'amplitude', retrigger: false },
   },
   {
     name: 'Space Organ',
+    category: 'Subtractive',
     adsr: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.2 },
     osc1: { waveform: 'sine', detune: 0, octave: 0 },
     osc2: { waveform: 'sine', detune: 8, octave: 1 },
@@ -121,6 +128,7 @@ export const SYNTH_PRESETS: SynthPreset[] = [
   },
   {
     name: 'Funk Clav',
+    category: 'Subtractive',
     adsr: { attack: 0.01, decay: 0.25, sustain: 0.0, release: 0.3 },
     osc1: { waveform: 'sawtooth', detune: -5, octave: 0 },
     osc2: { waveform: 'sawtooth', detune: 5, octave: 0 },
@@ -130,17 +138,8 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     reverb: { on: true, mix: 0.15, decay: 0.5 },
   },
   {
-    name: 'Percussive Marimba',
-    adsr: { attack: 0.01, decay: 0.2, sustain: 0.0, release: 0.2 },
-    osc1: { waveform: 'sine', detune: 0, octave: 0 },
-    osc2: { waveform: 'sine', detune: 0, octave: 2 },
-    mix: 0.3,
-    reverb: { on: true, mix: 0.25, decay: 0.8 },
-  },
-
-  // --- Pads ---
-  {
     name: 'Lush Pad',
+    category: 'Subtractive',
     adsr: { attack: 0.8, decay: 1.2, sustain: 0.7, release: 2.0 },
     osc1: { waveform: 'triangle', detune: -13, octave: 0 },
     osc2: { waveform: 'sawtooth', detune: 13, octave: -1 },
@@ -148,44 +147,22 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     filter: { on: true, type: 'lowpass', cutoff: 2800, resonance: 1.5 },
     reverb: { on: true, mix: 0.4, decay: 3.5 },
     chorus: { on: true, mix: 0.5, rate: 0.4, depth: 0.7 },
-    lfo: { on: true, waveform: 'sine', rate: 0.3, depth: 0.25, target: 'filter' }, // Slow filter sweep
+    lfo: { on: true, waveform: 'sine', rate: 0.3, depth: 0.25, target: 'filter', retrigger: false },
   },
   {
-    name: 'Dream Pad',
-    adsr: { attack: 1.2, decay: 0.8, sustain: 0.8, release: 1.8 },
-    osc1: { waveform: 'sine', detune: -10, octave: 0 },
-    osc2: { waveform: 'sine', detune: 10, octave: 1 },
-    mix: 0.6,
-    filter: { on: true, type: 'lowpass', cutoff: 3500, resonance: 1.0 },
-    reverb: { on: true, mix: 0.5, decay: 3.0 },
-    delay: { on: true, mix: 0.25, time: 0.6, feedback: 0.4 },
-  },
-  {
-    name: 'Cinematic Pad',
-    adsr: { attack: 1.5, decay: 1.5, sustain: 0.8, release: 2.8 },
-    osc1: { waveform: 'sine', detune: -12, octave: 0 },
-    osc2: { waveform: 'sawtooth', detune: 12, octave: 1 },
-    mix: 0.6,
-    filter: { on: true, type: 'lowpass', cutoff: 2500, resonance: 2 },
-    reverb: { on: true, mix: 0.5, decay: 4.5 },
-    phaser: { on: true, mix: 0.4, rate: 0.15, depth: 0.7, baseFrequency: 600 },
-  },
-
-  // --- Lead ---
-  {
-    name: 'Classic Lead',
-    adsr: { attack: 0.05, decay: 0.3, sustain: 0.6, release: 0.4 },
-    osc1: { waveform: 'sawtooth', detune: -7, octave: 0 },
-    osc2: { waveform: 'sawtooth', detune: 7, octave: 0 },
+    name: 'Mini Lead',
+    category: 'Subtractive',
+    adsr: { attack: 0.05, decay: 0.2, sustain: 0.8, release: 0.2 },
+    osc1: { waveform: 'sawtooth', detune: -8, octave: 0 },
+    osc2: { waveform: 'sawtooth', detune: 8, octave: 0 },
     mix: 0.5,
-    delay: { on: true, mix: 0.25, time: 0.4, feedback: 0.35 },
-    reverb: { on: true, mix: 0.15, decay: 1.2 },
-    lfo: { on: true, waveform: 'sine', rate: 6, depth: 0.1, target: 'pitch' }, // Vibrato
+    filter: { on: true, type: 'lowpass', cutoff: 2500, resonance: 2.0 },
+    saturation: { on: true, mix: 0.3, drive: 0.4 },
+    delay: { on: true, mix: 0.2, time: 0.3, feedback: 0.3 },
   },
-
-  // --- Bass ---
   {
     name: 'Rumble Bass',
+    category: 'Subtractive',
     adsr: { attack: 0.02, decay: 0.2, sustain: 0.8, release: 0.3 },
     osc1: { waveform: 'square', detune: -3, octave: -1 },
     osc2: { waveform: 'square', detune: 3, octave: -2 },
@@ -194,21 +171,281 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     saturation: { on: true, mix: 0.6, drive: 0.5 },
   },
   {
-    name: 'Pluck Bass',
-    adsr: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.2 },
-    osc1: { waveform: 'square', detune: 0, octave: -1 },
-    osc2: { waveform: 'square', detune: 0, octave: -1 },
-    mix: 0,
-    singleOscillator: true,
-    filter: { on: true, type: 'lowpass', cutoff: 1200, resonance: 2 },
+    name: 'Super Saw',
+    category: 'Subtractive',
+    adsr: { attack: 0.02, decay: 0.2, sustain: 1.0, release: 0.5 },
+    osc1: { waveform: 'sawtooth', detune: -15, octave: 0 },
+    osc2: { waveform: 'sawtooth', detune: 15, octave: 0 },
+    mix: 0.5,
+    reverb: { on: true, mix: 0.4, decay: 2.5 },
+    chorus: { on: true, mix: 0.6, rate: 0.3, depth: 0.8 },
   },
   {
-    name: 'Detuned Bass',
-    adsr: { attack: 0.03, decay: 0.4, sustain: 0.2, release: 0.25 },
-    osc1: { waveform: 'sawtooth', detune: -8, octave: -1 },
-    osc2: { waveform: 'sawtooth', detune: 8, octave: -1 },
+    name: 'Neon Bass',
+    category: 'Subtractive',
+    adsr: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.1 },
+    osc1: { waveform: 'sawtooth', detune: 0, octave: -1 },
+    osc2: { waveform: 'square', detune: 5, octave: -1 },
+    mix: 0.3,
+    filter: { on: true, type: 'lowpass', cutoff: 800, resonance: 12 },
+    saturation: { on: true, mix: 0.8, drive: 0.7 },
+  },
+  {
+    name: 'Soft Pad',
+    category: 'Subtractive',
+    adsr: { attack: 0.5, decay: 1.0, sustain: 0.8, release: 1.5 },
+    osc1: { waveform: 'triangle', detune: -5, octave: 0 },
+    osc2: { waveform: 'triangle', detune: 5, octave: 0 },
     mix: 0.5,
-    filter: { on: true, type: 'lowpass', cutoff: 800, resonance: 3 },
-    saturation: { on: true, mix: 0.4, drive: 0.2 },
+    reverb: { on: true, mix: 0.5, decay: 3.0 },
+    chorus: { on: true, mix: 0.4, rate: 0.5, depth: 0.6 },
+  },
+  {
+    name: 'Juno Brass',
+    category: 'Subtractive',
+    adsr: { attack: 0.1, decay: 0.3, sustain: 0.6, release: 1.0 },
+    osc1: { waveform: 'sawtooth', detune: 0, octave: 0 },
+    osc2: { waveform: 'square', detune: 5, octave: -1 },
+    mix: 0.4,
+    filter: { on: true, type: 'lowpass', cutoff: 3500, resonance: 1.0 },
+    chorus: { on: true, mix: 0.6, rate: 0.5, depth: 0.8 },
+    reverb: { on: true, mix: 0.3, decay: 2.0 },
+  },
+
+  // --- AM Synthesis (True AM & Ring Modulation) - 10 Presets ---
+  {
+    name: 'Vintage Tremolo',
+    category: 'AM',
+    adsr: { attack: 0.02, decay: 0.5, sustain: 0.6, release: 0.8 },
+    osc1: { waveform: 'sine', detune: 0, octave: 0 },
+    osc2: { waveform: 'sine', detune: 5, octave: 0 },
+    mix: 0.5,
+    lfo: { on: true, waveform: 'sine', rate: 6, depth: 0.6, target: 'amplitude', retrigger: false, keySync: false },
+    reverb: { on: true, mix: 0.2, decay: 1.5 },
+  },
+  {
+    name: 'Ring Mod Bell',
+    category: 'AM',
+    adsr: { attack: 0.01, decay: 2.0, sustain: 0.0, release: 2.5 },
+    osc1: { waveform: 'sine', detune: 0, octave: 1 },
+    osc2: { waveform: 'triangle', detune: 0, octave: 1 },
+    mix: 0.5,
+    // Key Sync enabled = Ratio based. 2.4 creates inharmonic bell tones. High depth = Ring Mod.
+    lfo: { on: true, waveform: 'sine', rate: 2.4, depth: 1.0, target: 'amplitude', retrigger: true, keySync: true },
+    reverb: { on: true, mix: 0.4, decay: 3.0 },
+  },
+  {
+    name: 'Robotic Lead',
+    category: 'AM',
+    adsr: { attack: 0.05, decay: 0.1, sustain: 1.0, release: 0.1 },
+    osc1: { waveform: 'sawtooth', detune: 0, octave: 0 },
+    osc2: { waveform: 'square', detune: 0, octave: -1 },
+    mix: 0.6,
+    // Fast non-synced AM creates a buzzing, gritty texture (Sidebands at ±30Hz)
+    lfo: { on: true, waveform: 'sawtooth', rate: 30, depth: 0.8, target: 'amplitude', retrigger: false, keySync: false },
+    saturation: { on: true, mix: 0.7, drive: 0.5 },
+  },
+  {
+    name: 'Space Comm',
+    category: 'AM',
+    adsr: { attack: 0.1, decay: 0.5, sustain: 0.8, release: 0.5 },
+    osc1: { waveform: 'sine', detune: 0, octave: 0 },
+    osc2: { waveform: 'sine', detune: 0, octave: 0 },
+    mix: 0.0,
+    singleOscillator: true,
+    // Sub-audio Key Sync creates rhythmic "chopping" or "aliasing" artifacts depending on ratio
+    lfo: { on: true, waveform: 'square', rate: 0.5, depth: 1.0, target: 'amplitude', retrigger: true, keySync: true },
+    delay: { on: true, mix: 0.4, time: 0.25, feedback: 0.6 },
+  },
+  {
+    name: 'Broken Toy',
+    category: 'AM',
+    adsr: { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.2 },
+    osc1: { waveform: 'triangle', detune: 0, octave: 1 },
+    osc2: { waveform: 'sine', detune: 0, octave: 0 },
+    mix: 0.5,
+    // Very fast AM into audio rate creates noise/sum-and-difference tones
+    lfo: { on: true, waveform: 'square', rate: 400, depth: 1.0, target: 'amplitude', retrigger: false, keySync: false },
+    filter: { on: true, type: 'lowpass', cutoff: 3000, resonance: 2.0 },
+  },
+  {
+    name: 'Prophet Ring',
+    category: 'AM',
+    adsr: { attack: 0.02, decay: 0.1, sustain: 1.0, release: 0.1 },
+    osc1: { waveform: 'square', detune: 0, octave: 0 },
+    osc2: { waveform: 'sawtooth', detune: 0, octave: 0 },
+    mix: 0.5,
+    // Rate 2.0 (Octave) keeps it in tune. Depth 1.0 = Full Ring Mod
+    lfo: { on: true, waveform: 'sine', rate: 2.0, depth: 0.9, target: 'amplitude', retrigger: true, keySync: true },
+    filter: { on: true, type: 'lowpass', cutoff: 8000, resonance: 0.5 },
+  },
+  {
+    name: 'Pulsar',
+    category: 'AM',
+    adsr: { attack: 0.5, decay: 1.0, sustain: 0.8, release: 1.5 },
+    osc1: { waveform: 'sawtooth', detune: 0, octave: -1 },
+    osc2: { waveform: 'sawtooth', detune: 10, octave: -1 },
+    mix: 0.5,
+    // Helicopter-like rhythmic throbbing
+    lfo: { on: true, waveform: 'square', rate: 12, depth: 1.0, target: 'amplitude', retrigger: false, keySync: false },
+    phaser: { on: true, mix: 0.5, rate: 0.2, depth: 0.7, baseFrequency: 400 },
+  },
+  {
+    name: 'Ghostly Choir',
+    category: 'AM',
+    adsr: { attack: 1.0, decay: 2.0, sustain: 0.7, release: 2.0 },
+    osc1: { waveform: 'triangle', detune: -5, octave: 0 },
+    osc2: { waveform: 'sine', detune: 5, octave: 0 },
+    mix: 0.5,
+    // Gentle AM combined with heavy reverb for a spooky feel
+    lfo: { on: true, waveform: 'sine', rate: 5, depth: 0.4, target: 'amplitude', retrigger: false, keySync: false },
+    reverb: { on: true, mix: 0.6, decay: 4.0 },
+  },
+  {
+    name: 'Sonar',
+    category: 'AM',
+    adsr: { attack: 0.01, decay: 0.5, sustain: 0.0, release: 1.0 },
+    osc1: { waveform: 'sine', detune: 0, octave: 1 },
+    osc2: { waveform: 'sine', detune: 0, octave: 1 },
+    mix: 0.0,
+    lfo: { on: true, waveform: 'sine', rate: 1.0, depth: 0.9, target: 'amplitude', retrigger: true, keySync: true },
+    delay: { on: true, mix: 0.5, time: 0.4, feedback: 0.5 },
+  },
+  {
+    name: 'Dirty Bass',
+    category: 'AM',
+    adsr: { attack: 0.01, decay: 0.2, sustain: 0.8, release: 0.3 },
+    osc1: { waveform: 'sawtooth', detune: 0, octave: -2 },
+    osc2: { waveform: 'sawtooth', detune: 0, octave: -2 },
+    mix: 0.0,
+    // Ring mod on low freqs creates grit
+    lfo: { on: true, waveform: 'square', rate: 0.5, depth: 1.0, target: 'amplitude', retrigger: true, keySync: true },
+    saturation: { on: true, mix: 0.6, drive: 0.6 },
+  },
+
+
+  // --- Sampling - Init Preset ---
+  {
+    name: 'User Sample',
+    category: 'Sampling',
+    adsr: { attack: 0.01, decay: 0.1, sustain: 1.0, release: 0.1 },
+    osc1: { waveform: 'sine', detune: 0, octave: 0 },
+    osc2: { waveform: 'sine', detune: 0, octave: 0 },
+    mix: 0.0,
+  },
+
+  // --- FM Synthesis (Linear Frequency Modulation) - 10 Presets ---
+  {
+    name: 'DX Keys',
+    category: 'FM',
+    adsr: { attack: 0.01, decay: 0.8, sustain: 0.4, release: 1.0 },
+    osc1: { waveform: 'sine', detune: 0, octave: 0 },
+    osc2: { waveform: 'sine', detune: 0, octave: 0 }, 
+    mix: 0.0, 
+    // Ratio 1.0 creates a rich, harmonic woody tone typical of FM E-Pianos
+    lfo: { on: true, waveform: 'sine', rate: 1.0, depth: 0.3, target: 'pitch', retrigger: true, keySync: true }, 
+    chorus: { on: true, mix: 0.3, rate: 0.5, depth: 0.5 },
+    reverb: { on: true, mix: 0.2, decay: 1.5 },
+  },
+  {
+    name: 'Glass Bell',
+    category: 'FM',
+    adsr: { attack: 0.01, decay: 2.5, sustain: 0.0, release: 3.0 },
+    osc1: { waveform: 'sine', detune: 0, octave: 1 },
+    osc2: { waveform: 'sine', detune: 0, octave: 1 },
+    mix: 0.0,
+    // Ratio 3.0 creates bright, harmonic harmonics (Twelfth) for a consonant bell sound
+    lfo: { on: true, waveform: 'sine', rate: 3.0, depth: 0.6, target: 'pitch', retrigger: true, keySync: true },
+    reverb: { on: true, mix: 0.4, decay: 3.5 },
+  },
+  {
+    name: 'Solid Bass',
+    category: 'FM',
+    adsr: { attack: 0.01, decay: 0.3, sustain: 0.5, release: 0.2 },
+    osc1: { waveform: 'sine', detune: 0, octave: -2 },
+    osc2: { waveform: 'sine', detune: 0, octave: -2 },
+    mix: 0.0,
+    // Ratio 0.5 (Sub-octave modulator) creates a hollow, punchy "Lately Bass" sound
+    lfo: { on: true, waveform: 'sine', rate: 0.5, depth: 0.5, target: 'pitch', retrigger: true, keySync: true },
+    saturation: { on: true, mix: 0.3, drive: 0.4 },
+  },
+  {
+    name: 'Starlight',
+    category: 'FM',
+    adsr: { attack: 0.5, decay: 1.0, sustain: 0.8, release: 1.5 },
+    osc1: { waveform: 'sine', detune: 0, octave: 1 },
+    osc2: { waveform: 'sine', detune: 5, octave: 1 },
+    mix: 0.0,
+    // Ratio 2.0 (Octave up) adds a shimmering high end
+    lfo: { on: true, waveform: 'sine', rate: 2.0, depth: 0.25, target: 'pitch', retrigger: false, keySync: true }, 
+    delay: { on: true, mix: 0.4, time: 0.35, feedback: 0.5 },
+    reverb: { on: true, mix: 0.4, decay: 2.5 },
+  },
+  {
+    name: 'Metallic Lead',
+    category: 'FM',
+    adsr: { attack: 0.01, decay: 0.2, sustain: 0.8, release: 0.3 },
+    osc1: { waveform: 'sawtooth', detune: 0, octave: 0 }, // Saw carrier for bite
+    osc2: { waveform: 'sine', detune: 0, octave: 0 },
+    mix: 0.0,
+    // Ratio 1.0 with Saw carrier creates complex, aggressive harmonics
+    lfo: { on: true, waveform: 'sine', rate: 1.0, depth: 0.4, target: 'pitch', retrigger: true, keySync: true },
+    saturation: { on: true, mix: 0.5, drive: 0.3 },
+  },
+  {
+    name: 'Growl Bass',
+    category: 'FM',
+    adsr: { attack: 0.05, decay: 0.4, sustain: 0.6, release: 0.3 },
+    osc1: { waveform: 'square', detune: 0, octave: -2 },
+    osc2: { waveform: 'sine', detune: 0, octave: -2 },
+    mix: 0.0,
+    // Modulating a Square wave creates intense growls
+    lfo: { on: true, waveform: 'sine', rate: 0.5, depth: 0.6, target: 'pitch', retrigger: true, keySync: true },
+    filter: { on: true, type: 'lowpass', cutoff: 800, resonance: 1.0 },
+  },
+  {
+    name: 'Log Drum',
+    category: 'FM',
+    adsr: { attack: 0.01, decay: 0.2, sustain: 0.0, release: 0.2 },
+    osc1: { waveform: 'sine', detune: 0, octave: -1 },
+    osc2: { waveform: 'sine', detune: 0, octave: -1 },
+    mix: 0.0,
+    // Ratio 1.0 ensures percussive tone is in tune (Fundamental)
+    lfo: { on: true, waveform: 'sine', rate: 1.0, depth: 0.4, target: 'pitch', retrigger: true, keySync: true },
+    reverb: { on: true, mix: 0.1, decay: 0.8 },
+  },
+  {
+    name: 'Brass Sect',
+    category: 'FM',
+    adsr: { attack: 0.1, decay: 0.3, sustain: 0.7, release: 0.4 },
+    osc1: { waveform: 'sawtooth', detune: -3, octave: 0 },
+    osc2: { waveform: 'sawtooth', detune: 3, octave: 0 },
+    mix: 0.0,
+    // Classic Synth Brass using FM to add brightness to saw waves
+    lfo: { on: true, waveform: 'sine', rate: 1.0, depth: 0.3, target: 'pitch', retrigger: true, keySync: true },
+    chorus: { on: true, mix: 0.3, rate: 0.6, depth: 0.4 },
+    reverb: { on: true, mix: 0.25, decay: 1.5 },
+  },
+  {
+    name: 'Kalimba',
+    category: 'FM',
+    adsr: { attack: 0.01, decay: 0.3, sustain: 0.1, release: 0.3 },
+    osc1: { waveform: 'sine', detune: 0, octave: 0 },
+    osc2: { waveform: 'sine', detune: 0, octave: 0 },
+    mix: 0.0,
+    // High ratio creates woody attack
+    lfo: { on: true, waveform: 'sine', rate: 9.0, depth: 0.4, target: 'pitch', retrigger: true, keySync: true },
+    delay: { on: true, mix: 0.2, time: 0.2, feedback: 0.3 },
+  },
+  {
+    name: 'Ice Crystals',
+    category: 'FM',
+    adsr: { attack: 0.8, decay: 2.0, sustain: 0.5, release: 3.0 },
+    osc1: { waveform: 'sine', detune: 0, octave: 2 },
+    osc2: { waveform: 'sine', detune: 0, octave: 2 },
+    mix: 0.0,
+    // Ratio 5.0 (2 octaves + major third ish harmonic series) keeps high shimmer in key
+    lfo: { on: true, waveform: 'sine', rate: 5.0, depth: 0.5, target: 'pitch', retrigger: true, keySync: true },
+    reverb: { on: true, mix: 0.6, decay: 4.0 },
   },
 ];

@@ -3,7 +3,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Keyboard } from './components/Keyboard';
 import { Controls } from './components/Controls';
 import { AudioEngine } from './services/audioService';
-import type { ADSREnvelope, OscillatorSettings, SynthPreset, LoopEvent, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings } from './types';
+import type { ADSREnvelope, OscillatorSettings, SynthPreset, LoopEvent, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, PresetCategory } from './types';
 import { KEY_MAP, SYNTH_PRESETS, KEYBOARD_NOTES, DEFAULT_FILTER_SETTINGS, DEFAULT_REVERB_SETTINGS, DEFAULT_DELAY_SETTINGS, DEFAULT_SATURATION_SETTINGS, DEFAULT_CHORUS_SETTINGS, DEFAULT_PHASER_SETTINGS, DEFAULT_LFO_SETTINGS } from './constants';
 import { SidePanel } from './components/SidePanel';
 import { Visualizer } from './components/Visualizer';
@@ -18,6 +18,14 @@ import { EffectsPanel } from './components/EffectsPanel';
 import { LFOPanel } from './components/LFOPanel';
 
 const PITCH_BEND_AMOUNT = 200;
+
+const THEMES: Record<PresetCategory, { primary: string; secondary: string }> = {
+    'Simple': { primary: '0 255 255', secondary: '138 43 226' }, // Cyan / Purple
+    'Subtractive': { primary: '255 165 0', secondary: '220 20 60' }, // Orange / Red
+    'AM': { primary: '255 20 147', secondary: '75 0 130' }, // Deep Pink / Indigo
+    'Sampling': { primary: '16 185 129', secondary: '13 148 136' }, // Emerald / Teal
+    'FM': { primary: '255 0 255', secondary: '255 215 0' }, // Magenta / Gold
+};
 
 const usePrevious = <T extends unknown>(value: T): T | undefined => {
   const ref = useRef<T | undefined>(undefined);
@@ -65,17 +73,27 @@ const App: React.FC = () => {
   const [osc2, setOsc2] = useState<OscillatorSettings>(SYNTH_PRESETS[0].osc2);
   const [oscMix, setOscMix] = useState<number>(SYNTH_PRESETS[0].mix);
   const [activePresetName, setActivePresetName] = useState<string>(SYNTH_PRESETS[0].name);
+  const [activeCategory, setActiveCategory] = useState<PresetCategory>(SYNTH_PRESETS[0].category);
 
   // --- APP & AUDIO STATE ---
   const [pressedNotes, setPressedNotes] = useState<Set<string>>(new Set());
   const [isInitialized, setIsInitialized] = useState(false);
   const [octaveOffset, setOctaveOffset] = useState(0);
   const [pitchBend, setPitchBend] = useState(0);
+  const [masterVolume, setMasterVolume] = useState(0.75);
   
   const [sustainOn, setSustainOn] = useState(false);
   const [sustainedNotes, setSustainedNotes] = useState<Map<string, number>>(new Map());
   const [sustainedChords, setSustainedChords] = useState<Map<string, { notes: string[], offset: number }>>(new Map());
   const [loopBars, setLoopBars] = useState<number>(4);
+  const [loopBuffer, setLoopBuffer] = useState<AudioBuffer | null>(null);
+  
+  // --- SAMPLER STATE ---
+  const [sampleBuffer, setSampleBuffer] = useState<AudioBuffer | null>(null);
+  const [sampleVolume, setSampleVolume] = useState(0.5);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(1);
+  const [sampleLoop, setSampleLoop] = useState(false);
   
   // --- MIDI STATE ---
   const [midiDeviceName, setMidiDeviceName] = useState<string | null>(null);
@@ -130,6 +148,8 @@ const App: React.FC = () => {
     chordMode,
     musicKey,
     diatonicScale,
+    activeCategory,
+    sampleVolume
   });
 
   // Effect to keep the ref updated with the latest state on every render
@@ -145,15 +165,17 @@ const App: React.FC = () => {
       chordMode,
       musicKey,
       diatonicScale,
+      activeCategory,
+      sampleVolume
     };
-  }); // No dependency array ensures it runs on every render
+  }); 
 
-  const { isMetronomePlaying, bpm, setBpm, toggleMetronome, metronomeTick, currentBeat } = useMetronome({
+  const { isMetronomePlaying, bpm, setBpm, toggleMetronome, metronomeTick, beatInfo } = useMetronome({
     audioContext: audioEngineRef.current?.getAudioContext() ?? null,
   });
 
   const looperNoteOn = useCallback((note: string, time?: number) => {
-    audioEngineRef.current?.playNote(note, synthSettingsRef.current.adsr, synthSettingsRef.current.osc1, synthSettingsRef.current.osc2, synthSettingsRef.current.oscMix, time);
+    audioEngineRef.current?.playNote(note, synthSettingsRef.current.adsr, synthSettingsRef.current.osc1, synthSettingsRef.current.osc2, synthSettingsRef.current.oscMix, time, undefined, synthSettingsRef.current.activeCategory);
   }, []);
 
   const looperNoteOff = useCallback((note: string, time?: number) => {
@@ -169,12 +191,13 @@ const App: React.FC = () => {
     clearLoop,
     noteOn: looperRecordNoteOn,
     noteOff: looperRecordNoteOff,
+    countInMeasure,
   } = useLooper({
     bpm,
     bars: loopBars,
     audioContext: audioEngineRef.current?.getAudioContext() ?? null,
     isMetronomePlaying,
-    currentBeat,
+    beatInfo,
     onPlayNote: looperNoteOn,
     onStopNote: looperNoteOff,
     onStopAllLoopNotes: () => audioEngineRef.current?.stopAllNotes(),
@@ -230,6 +253,8 @@ const App: React.FC = () => {
   const handleInit = () => {
     if (!audioEngineRef.current) {
         audioEngineRef.current = new AudioEngine();
+        audioEngineRef.current.setSampleVolume(sampleVolume);
+        audioEngineRef.current.setMasterVolume(masterVolume);
     }
     setIsInitialized(true);
   };
@@ -254,7 +279,7 @@ const App: React.FC = () => {
             case 9: // Note On
                 if (velocity > 0) {
                     const note = midiToNoteName(noteNumber);
-                    audioEngineRef.current.playNote(note, settings.adsr, settings.osc1, settings.osc2, settings.oscMix);
+                    audioEngineRef.current.playNote(note, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
                     looperRecordNoteOn(note);
                     setMidiPressedNotes(prev => new Set(prev).add(note));
                     setMidiSustainedNotes(prev => {
@@ -327,6 +352,12 @@ const App: React.FC = () => {
     audioEngineRef.current?.setAdaptiveTuning(adaptiveTuning);
   }, [adaptiveTuning, isInitialized]);
   
+  useEffect(() => {
+    if(audioEngineRef.current) {
+        audioEngineRef.current.setMasterVolume(masterVolume);
+    }
+  }, [masterVolume, isInitialized]);
+
   // --- EFFECTS HOOKS ---
   useEffect(() => { audioEngineRef.current?.updateFilter(filterSettings); }, [filterSettings, isInitialized]);
   useEffect(() => { audioEngineRef.current?.updateDelay(delaySettings); }, [delaySettings, isInitialized]);
@@ -358,6 +389,41 @@ const App: React.FC = () => {
         cancelAnimationFrame(animationFrameId);
     };
   }, [isInitialized, keyboardDisplayMode, noteFrequencies.size]);
+  
+  // --- SAMPLE HANDLING ---
+  const handleSampleLoad = useCallback(async (arrayBuffer: ArrayBuffer) => {
+      if (!audioEngineRef.current) return;
+      try {
+          const audioContext = audioEngineRef.current.getAudioContext();
+          const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          await audioEngineRef.current.setSample(decodedBuffer);
+          setSampleBuffer(decodedBuffer);
+      } catch (error) {
+          console.error("Error decoding audio sample:", error);
+      }
+  }, []);
+  
+  const handleTrimChange = (start: number, end: number) => {
+      setTrimStart(start);
+      setTrimEnd(end);
+      if (audioEngineRef.current) {
+          audioEngineRef.current.updateSampleSettings(start, end, sampleLoop);
+      }
+  };
+
+  const handleSampleLoopChange = (loop: boolean) => {
+      setSampleLoop(loop);
+      if (audioEngineRef.current) {
+          audioEngineRef.current.updateSampleSettings(trimStart, trimEnd, loop);
+      }
+  }
+
+  const handleSampleVolumeChange = (volume: number) => {
+      setSampleVolume(volume);
+      if (audioEngineRef.current) {
+          audioEngineRef.current.setSampleVolume(volume);
+      }
+  };
 
   const handlePresetChange = (preset: SynthPreset) => {
     setAdsr(preset.adsr);
@@ -365,6 +431,7 @@ const App: React.FC = () => {
     setOsc2(preset.osc2);
     setOscMix(preset.mix);
     setActivePresetName(preset.name);
+    setActiveCategory(preset.category);
 
     // Update effects, falling back to defaults if not specified in preset
     setFilterSettings(preset.filter ?? DEFAULT_FILTER_SETTINGS);
@@ -388,11 +455,11 @@ const App: React.FC = () => {
         activeChordsRef.current.set(note, chordNotes);
         setActiveChords(prev => new Map(prev).set(note, chordNotes));
         chordNotes.forEach(chordNote => {
-            audioEngineRef.current?.playNote(chordNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, finalRootNote);
+            audioEngineRef.current?.playNote(chordNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, finalRootNote, settings.activeCategory);
             looperRecordNoteOn(chordNote);
         });
     } else {
-        audioEngineRef.current.playNote(finalRootNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix);
+        audioEngineRef.current.playNote(finalRootNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
         looperRecordNoteOn(finalRootNote);
     }
     
@@ -505,6 +572,33 @@ const App: React.FC = () => {
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [handleNoteDown, handleNoteUp, pressedNotes]);
+  
+  // Effect to render the loop to a buffer for visualization
+  useEffect(() => {
+    const renderLoop = async () => {
+        if (loop.length > 0 && audioEngineRef.current) {
+            try {
+                const loopDuration = (60 / bpm) * 4 * loopBars;
+                const buffer = await audioEngineRef.current.renderLoopToBuffer(loop, loopDuration, { 
+                    adsr, 
+                    osc1, 
+                    osc2, 
+                    mix: oscMix,
+                    sampleVolume: synthSettingsRef.current.sampleVolume
+                });
+                setLoopBuffer(buffer);
+            } catch (error) {
+                console.error("Failed to render loop for visualization:", error);
+                setLoopBuffer(null);
+            }
+        } else {
+            setLoopBuffer(null);
+        }
+    };
+
+    renderLoop();
+  }, [loop, bpm, loopBars, adsr, osc1, osc2, oscMix, sampleVolume]);
+
 
   const handleDownload = async () => {
     if (loop.length === 0 || !audioEngineRef.current) return;
@@ -515,7 +609,8 @@ const App: React.FC = () => {
             adsr: synthSettingsRef.current.adsr, 
             osc1: synthSettingsRef.current.osc1, 
             osc2: synthSettingsRef.current.osc2, 
-            mix: synthSettingsRef.current.oscMix 
+            mix: synthSettingsRef.current.oscMix,
+            sampleVolume: synthSettingsRef.current.sampleVolume
         });
         const wavBlob = encodeWAV(audioBuffer);
         const url = URL.createObjectURL(wavBlob);
@@ -533,9 +628,16 @@ const App: React.FC = () => {
     }
   };
   
+  const currentTheme = THEMES[activeCategory];
+  const styleProps = {
+      '--accent-500': currentTheme.primary,
+      '--secondary-500': currentTheme.secondary,
+      '--accent-400': currentTheme.primary, // Simplified for now
+  } as React.CSSProperties;
+
   if (!isInitialized) {
     return (
-        <div className="flex items-center justify-center min-h-screen bg-synth-gray-900">
+        <div className="flex items-center justify-center min-h-screen bg-synth-gray-900" style={styleProps}>
             <div className="text-center p-8 bg-synth-gray-800 rounded-lg shadow-xl">
                 <h1 className="text-3xl font-bold text-white mb-2">Unnamed ISL Synth</h1>
                 <p className="text-lg text-synth-gray-500 mb-8">by Clark Lambert</p>
@@ -551,8 +653,11 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="relative min-h-screen bg-synth-gray-800 flex flex-col items-center justify-center p-4 font-sans antialiased">
-      <div className="w-full max-w-6xl mx-auto bg-synth-gray-900 shadow-2xl rounded-xl p-4 sm:p-6 lg:p-8 flex flex-col gap-8">
+    <div 
+        className="relative min-h-screen bg-synth-gray-800 flex flex-col items-center justify-center p-4 font-sans antialiased transition-colors duration-500"
+        style={styleProps}
+    >
+      <div className="w-full max-w-6xl mx-auto bg-synth-gray-900 shadow-2xl rounded-xl p-4 sm:p-6 lg:p-8 flex flex-col gap-8 transition-colors duration-500">
         <header className="flex justify-center items-center">
             <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-wider">
                 Unnamed ISL Synthesizer
@@ -567,9 +672,19 @@ const App: React.FC = () => {
             oscMix={oscMix} setOscMix={setOscMix}
             onPresetChange={handlePresetChange}
             activePresetName={activePresetName}
+            activeCategory={activeCategory}
             analyserX={audioEngineRef.current?.analyserX ?? null}
             analyserY={audioEngineRef.current?.analyserY ?? null}
             showTooltips={showTooltips}
+            onSampleLoad={handleSampleLoad}
+            sampleBuffer={sampleBuffer}
+            trimStart={trimStart}
+            trimEnd={trimEnd}
+            onTrimChange={handleTrimChange}
+            sampleVolume={sampleVolume}
+            onSampleVolumeChange={handleSampleVolumeChange}
+            sampleLoop={sampleLoop}
+            onSampleLoopChange={handleSampleLoopChange}
           />
           <LFOPanel
             settings={lfoSettings}
@@ -586,6 +701,8 @@ const App: React.FC = () => {
           pitchBend={pitchBend}
           maxPitchBend={PITCH_BEND_AMOUNT}
           sustainOn={sustainOn}
+          masterVolume={masterVolume}
+          onMasterVolumeChange={setMasterVolume}
         />
         <div className="flex-grow flex flex-col">
           <Keyboard 
@@ -615,10 +732,12 @@ const App: React.FC = () => {
                     loopProgress={progress}
                     isDownloading={isDownloading}
                     hasLoop={loop.length > 0}
-                    countInBeat={loopState === 'countingIn' ? currentBeat : 0}
+                    countInBeat={loopState === 'countingIn' ? beatInfo.beat : 0}
+                    countInMeasure={countInMeasure}
                     loopBars={loopBars}
                     onLoopBarsChange={setLoopBars}
                     isLooping={loopState !== 'idle'}
+                    loopBuffer={loopBuffer}
                 />
            </div>
            

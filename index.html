@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -18,12 +19,14 @@
                 '500': '#8A8A8A',
               },
               'synth-purple': {
-                '500': '#8A2BE2',
-                '400': '#9932CC',
+                '500': 'rgb(var(--secondary-500) / <alpha-value>)',
+                '400': 'rgb(var(--secondary-400) / <alpha-value>)',
               },
               'synth-cyan': {
-                '500': '#00FFFF',
-                '400': '#40E0D0',
+                '500': 'rgb(var(--accent-500) / <alpha-value>)',
+                '400': 'rgb(var(--accent-400) / <alpha-value>)',
+                '300': 'rgb(var(--accent-300) / <alpha-value>)',
+                '700': 'rgb(var(--accent-700) / <alpha-value>)',
               }
             },
             fontFamily: {
@@ -37,6 +40,17 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&display=swap" rel="stylesheet">
     <style>
+        /* Default Theme (Simple/Cyan) */
+        :root {
+          --accent-500: 0 255 255;
+          --accent-400: 64 224 208;
+          --accent-300: 127 255 212;
+          --accent-700: 0 139 139;
+          
+          --secondary-500: 138 43 226;
+          --secondary-400: 153 50 204;
+        }
+
         body {
             -webkit-font-smoothing: antialiased;
             -moz-osx-smoothing: grayscale;
@@ -60,20 +74,20 @@
           appearance: none;
           height: 20px;
           width: 20px;
-          background: #00FFFF; /* synth-cyan-500 */
+          background: rgb(var(--accent-500)); /* Dynamic Accent */
           border-radius: 50%;
           border: 3px solid #1E1E1E; /* synth-gray-800 */
-          box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+          box-shadow: 0 0 5px rgba(var(--accent-500), 0.7);
           cursor: ns-resize;
           margin-top: -6px; /* Vertically center thumb on the track */
         }
         .slider-rotated::-moz-range-thumb {
           height: 14px; /* Moz thumb size is calculated differently */
           width: 14px;
-          background: #00FFFF;
+          background: rgb(var(--accent-500));
           border-radius: 50%;
           border: 3px solid #1E1E1E;
-          box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+          box-shadow: 0 0 5px rgba(var(--accent-500), 0.7);
           cursor: ns-resize;
         }
         .slider-rotated::-moz-range-track {
@@ -99,10 +113,10 @@
           appearance: none;
           height: 20px;
           width: 20px;
-          background: #00FFFF; /* synth-cyan-500 */
+          background: rgb(var(--accent-500));
           border-radius: 50%;
           border: 3px solid #1E1E1E; /* synth-gray-800 */
-          box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+          box-shadow: 0 0 5px rgba(var(--accent-500), 0.7);
           cursor: ew-resize;
           margin-top: -6px; /* Center thumb on track */
         }
@@ -110,10 +124,10 @@
         input[type="range"].horizontal-slider::-moz-range-thumb {
           height: 14px;
           width: 14px;
-          background: #00FFFF;
+          background: rgb(var(--accent-500));
           border-radius: 50%;
           border: 3px solid #1E1E1E;
-          box-shadow: 0 0 5px rgba(0, 255, 255, 0.7);
+          box-shadow: 0 0 5px rgba(var(--accent-500), 0.7);
           cursor: ew-resize;
         }
 
