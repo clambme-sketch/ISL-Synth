@@ -1,8 +1,8 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { ChevronDownIcon, DownloadIcon, PlayIcon, RecordIcon, StopIcon, TrashIcon } from './icons';
 import { LoopVisualizer } from './LoopVisualizer';
+import { Tooltip } from './Tooltip';
 
 interface SequencerPanelProps {
     bpm: number;
@@ -24,6 +24,7 @@ interface SequencerPanelProps {
     onLoopBarsChange: (bars: number) => void;
     isLooping: boolean;
     loopBuffer: AudioBuffer | null;
+    showTooltips: boolean;
 }
 
 const IconButton: React.FC<{
@@ -33,22 +34,25 @@ const IconButton: React.FC<{
     children: React.ReactNode;
     label: string;
     className?: string;
-}> = ({ onClick, disabled = false, active = false, children, label, className = '' }) => (
-    <button
-        onClick={onClick}
-        disabled={disabled}
-        aria-label={label}
-        className={`w-12 h-12 flex items-center justify-center rounded-full transition-all duration-150
-            ${active 
-                ? 'bg-synth-cyan-500 text-synth-gray-900 shadow-[0_0_12px_3px_rgba(0,255,255,0.7)]' 
-                : 'bg-synth-gray-700 hover:bg-synth-gray-600'
+    showTooltip: boolean;
+}> = ({ onClick, disabled = false, active = false, children, label, className = '', showTooltip }) => (
+    <Tooltip text={label} show={showTooltip}>
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            aria-label={label}
+            className={`w-12 h-12 flex items-center justify-center rounded-full transition-all duration-150
+                ${active 
+                    ? 'bg-synth-cyan-500 text-synth-gray-900 shadow-[0_0_12px_3px_rgba(0,255,255,0.7)]' 
+                    : 'bg-synth-gray-700 hover:bg-synth-gray-600'
+                }
+                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-synth-gray-700
+                ${className}`
             }
-            disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-synth-gray-700
-            ${className}`
-        }
-    >
-        {children}
-    </button>
+        >
+            {children}
+        </button>
+    </Tooltip>
 );
 
 
@@ -56,7 +60,7 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
     bpm, onBpmChange, isMetronomePlaying, onToggleMetronome, metronomeTick,
     loopState, onRecord, onPlay, onClear, onDownload, loopProgress,
     isDownloading, hasLoop, countInBeat,
-    countInMeasure, loopBars, onLoopBarsChange, isLooping, loopBuffer
+    countInMeasure, loopBars, onLoopBarsChange, isLooping, loopBuffer, showTooltips
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const isRecording = loopState === 'recording' || loopState === 'overdubbing';
@@ -98,7 +102,7 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
 
          <div
             id="sequencer-content"
-            className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}
+            className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[500px] opacity-100 overflow-visible' : 'max-h-0 opacity-0 overflow-hidden'}`}
         >
             <div className="pt-4 border-t border-synth-gray-700/50 flex flex-col md:flex-row gap-4">
               {/* Metronome */}
@@ -155,18 +159,19 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                     <div className="flex items-center gap-2">
                         <span className="text-sm text-synth-gray-500">Bars:</span>
                         {[1, 2, 4, 8].map(bar => (
-                            <button
-                                key={bar}
-                                onClick={() => onLoopBarsChange(bar)}
-                                disabled={isLooping}
-                                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                                    loopBars === bar
-                                        ? 'bg-synth-cyan-500 text-synth-gray-900 font-bold'
-                                        : 'bg-synth-gray-700 hover:bg-synth-gray-600 disabled:opacity-50 disabled:hover:bg-synth-gray-700'
-                                }`}
-                            >
-                                {bar}
-                            </button>
+                            <Tooltip key={bar} text={`Loop Length: ${bar} Bars`} show={showTooltips}>
+                                <button
+                                    onClick={() => onLoopBarsChange(bar)}
+                                    disabled={isLooping}
+                                    className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                                        loopBars === bar
+                                            ? 'bg-synth-cyan-500 text-synth-gray-900 font-bold'
+                                            : 'bg-synth-gray-700 hover:bg-synth-gray-600 disabled:opacity-50 disabled:hover:bg-synth-gray-700'
+                                    }`}
+                                >
+                                    {bar}
+                                </button>
+                            </Tooltip>
                         ))}
                     </div>
                 </div>
@@ -191,6 +196,7 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                         onClick={onRecord} 
                         disabled={!isMetronomePlaying && loopState === 'idle'}
                         active={isRecording}
+                        showTooltip={showTooltips}
                         className={`relative
                             ${isRecording ? 'bg-red-600 text-white shadow-[0_0_12px_3px_rgba(255,0,0,0.7)] animate-pulse' : ''}
                             ${loopState === 'countingIn' ? 'bg-yellow-500 text-white shadow-[0_0_12px_3px_rgba(255,255,0,0.7)] animate-pulse' : ''}
@@ -204,15 +210,15 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                         )}
                     </IconButton>
 
-                    <IconButton onClick={onPlay} active={loopState === 'playing' || loopState === 'overdubbing'} disabled={!hasLoop} label={loopState === 'playing' || loopState === 'overdubbing' ? 'Stop Playback' : 'Play Loop'}>
+                    <IconButton onClick={onPlay} active={loopState === 'playing' || loopState === 'overdubbing'} disabled={!hasLoop} label={loopState === 'playing' || loopState === 'overdubbing' ? 'Stop Playback' : 'Play Loop'} showTooltip={showTooltips}>
                         {loopState === 'playing' || loopState === 'overdubbing' ? <StopIcon className="w-6 h-6"/> : <PlayIcon className="w-6 h-6"/>}
                     </IconButton>
 
-                    <IconButton onClick={onClear} disabled={!hasLoop || isRecording} label="Clear Loop">
+                    <IconButton onClick={onClear} disabled={!hasLoop || isRecording} label="Clear Loop" showTooltip={showTooltips}>
                         <TrashIcon className="w-6 h-6"/>
                     </IconButton>
 
-                    <IconButton onClick={onDownload} disabled={!hasLoop || isDownloading || isRecording} label="Download Loop">
+                    <IconButton onClick={onDownload} disabled={!hasLoop || isDownloading || isRecording} label="Download Loop" showTooltip={showTooltips}>
                         {isDownloading ? (
                              <div className="w-5 h-5 border-2 border-synth-gray-500 border-t-synth-cyan-500 rounded-full animate-spin"></div>
                         ) : (
@@ -229,6 +235,5 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
               </div>
             </div>
         </div>
-    </div>
-  );
+    );
 };

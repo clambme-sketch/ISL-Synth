@@ -344,7 +344,8 @@ export class AudioEngine {
         this.lfo.start(retriggerTime);
     }
 
-    if (this.activeNodes.has(note)) this.stopNote(note, 0.01); 
+    // Softly stop existing note to prevent clicks (voice stealing)
+    if (this.activeNodes.has(note)) this.stopNote(note, 0.03, time);
 
     const now = time ?? this.audioContext.currentTime;
     const finalRootNote = rootNote || note;
@@ -515,18 +516,20 @@ export class AudioEngine {
     const { sources, adsrGain } = activeNode;
     const now = time ?? this.audioContext.currentTime;
 
+    // Avoid abrupt cuts for active envelopes
     adsrGain.gain.cancelScheduledValues(now);
     const currentGain = adsrGain.gain.value;
+    // If no explicit time provided, set current value anchor. If future time, the anchor is the sustain value.
     if (!time) adsrGain.gain.setValueAtTime(currentGain, now);
-    const timeConstant = release > 0.001 ? release / 4 : 0.001;
-    adsrGain.gain.setTargetAtTime(0, now, timeConstant);
+    
+    const effectiveRelease = Math.max(release, 0.01);
+    adsrGain.gain.setTargetAtTime(0, now, effectiveRelease / 3); // Tighter exponential decay
 
-    const stopTime = now + release + 0.05;
+    const stopTime = now + effectiveRelease + 0.05;
     sources.forEach(source => {
         if (source instanceof OscillatorNode || source instanceof AudioBufferSourceNode) {
             source.stop(stopTime);
         }
-        // Gain nodes don't need 'stop', they will be garbage collected
     });
 
     const cleanupTimeout = (stopTime - this.audioContext.currentTime) * 1000;

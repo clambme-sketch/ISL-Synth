@@ -97,7 +97,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             <div
                 id="settings-content"
-                className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}
+                className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[500px] opacity-100 overflow-visible' : 'max-h-0 opacity-0 overflow-hidden'}`}
             >
                 <div className="pt-2 border-t border-synth-gray-700/50 flex flex-col">
                     <SectionHeader title="MIDI" />

@@ -1,5 +1,5 @@
 
-import type { SynthPreset, FilterSettings, ReverbSettings, DelaySettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings } from './types';
+import type { SynthPreset, FilterSettings, ReverbSettings, DelaySettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, ArpeggiatorSettings } from './types';
 
 export const NOTE_FREQUENCIES: { [note: string]: number } = {
     'C1': 32.70, 'C#1': 34.65, 'D1': 36.71, 'D#1': 38.89, 'E1': 41.20, 'F1': 43.65, 'F#1': 46.25, 'G1': 49.00, 'G#1': 51.91, 'A1': 55.00, 'A#1': 58.27, 'B1': 61.74,
@@ -56,6 +56,7 @@ export const DEFAULT_SATURATION_SETTINGS: SaturationSettings = { on: false, mix:
 export const DEFAULT_CHORUS_SETTINGS: ChorusSettings = { on: false, mix: 0.4, rate: 1.5, depth: 0.7 };
 export const DEFAULT_PHASER_SETTINGS: PhaserSettings = { on: false, mix: 0.5, rate: 1.2, depth: 0.8, baseFrequency: 350 };
 export const DEFAULT_LFO_SETTINGS: LFOSettings = { on: false, waveform: 'sine', rate: 5, depth: 0.2, target: 'pitch', retrigger: false, keySync: false };
+export const DEFAULT_ARP_SETTINGS: ArpeggiatorSettings = { on: false, latch: false, rate: '1/8', direction: 'up', range: 1, gate: 0.8 };
 
 export const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 export const MAJOR_SCALE_INTERVALS = [0, 2, 4, 5, 7, 9, 11]; // W-W-H-W-W-W-H
@@ -208,7 +209,7 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc2: { waveform: 'square', detune: 5, octave: -1 },
     mix: 0.4,
     filter: { on: true, type: 'lowpass', cutoff: 3500, resonance: 1.0 },
-    chorus: { on: true, mix: 0.6, rate: 0.5, depth: 0.8 },
+    chorus: { on: true, mix: 0.6, rate: 0.5, depth: 0.3 },
     reverb: { on: true, mix: 0.3, decay: 2.0 },
   },
 

@@ -155,7 +155,7 @@ export const EffectsPanel: React.FC<EffectsPanelProps> = ({
 
             <div
                 id="effects-content"
-                className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}
+                className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[1000px] opacity-100 overflow-visible' : 'max-h-0 opacity-0 overflow-hidden'}`}
             >
                 <div className="pt-4 border-t border-synth-gray-700/50 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     

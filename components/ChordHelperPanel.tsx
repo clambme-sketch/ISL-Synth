@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import type { ChordMode } from '../types';
 import { ChevronDownIcon } from './icons';
@@ -133,7 +132,7 @@ export const ChordHelperPanel: React.FC<ChordToolsPanelProps> = ({
             
             <div
                 id="chord-tools-content"
-                className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'}`}
+                className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[800px] opacity-100 overflow-visible' : 'max-h-0 opacity-0 overflow-hidden'}`}
             >
                 <div className="pt-4 border-t border-synth-gray-700/50 flex flex-col gap-4">
                      <div className="bg-synth-gray-800 p-3 rounded-lg flex items-center justify-center gap-4">
@@ -166,7 +165,7 @@ export const ChordHelperPanel: React.FC<ChordToolsPanelProps> = ({
                     {activeTab === 'autoChords' && (
                         <div className="flex flex-col gap-4">
                             <div className="flex justify-between items-center">
-                                <label htmlFor="auto-chords-toggle" className="text-sm text-synth-gray-500">
+                                <label htmlFor="auto-chords-toggle" className="text-sm text-synth-gray-500 cursor-pointer">
                                     Enable Auto Chords
                                 </label>
                                 <label className="flex items-center cursor-pointer">
@@ -224,7 +223,7 @@ export const ChordHelperPanel: React.FC<ChordToolsPanelProps> = ({
                     {activeTab === 'helper' && (
                         <div className="flex flex-col gap-4">
                              <div className="flex items-center justify-between">
-                                <label htmlFor="chord-helper-toggle-input" className="text-sm text-synth-gray-500">
+                                <label htmlFor="chord-helper-toggle-input" className="text-sm text-synth-gray-500 cursor-pointer">
                                     Enable Chord Highlighting
                                 </label>
                                 <label className="flex items-center cursor-pointer">

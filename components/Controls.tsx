@@ -43,7 +43,8 @@ const OscillatorPanel: React.FC<{
     settings: OscillatorSettings;
     onSettingsChange: React.Dispatch<React.SetStateAction<OscillatorSettings>>;
     isSingleOscillatorMode: boolean;
-}> = ({ id, settings, onSettingsChange, isSingleOscillatorMode }) => {
+    showTooltips: boolean;
+}> = ({ id, settings, onSettingsChange, isSingleOscillatorMode, showTooltips }) => {
     const waveforms: WaveformType[] = ['sine', 'square', 'sawtooth', 'triangle'];
 
     const getWaveformLabel = (wave: WaveformType) => {
@@ -69,10 +70,12 @@ const OscillatorPanel: React.FC<{
             <h3 className="text-lg font-semibold text-white">Oscillator {id}</h3>
             <div className="grid grid-cols-2 gap-2">
                 {waveforms.map(wave => (
-                <label key={wave} className={`p-2 rounded-md cursor-pointer transition-colors flex items-center justify-center gap-2 ${settings.waveform === wave ? 'bg-synth-purple-500 text-white' : 'bg-synth-gray-700 hover:bg-synth-gray-600'}`}>
-                    <input type="radio" name={`waveform-${id}`} value={wave} checked={settings.waveform === wave} onChange={() => handleWaveformChange(wave)} className="sr-only" />
-                    <WaveformIcon type={wave} className="w-6 h-4" />
-                    <span>{getWaveformLabel(wave)}</span>
+                <label key={wave} className={`p-2 rounded-md cursor-pointer transition-colors flex items-center justify-center gap-2 relative group ${settings.waveform === wave ? 'bg-synth-purple-500 text-white' : 'bg-synth-gray-700 hover:bg-synth-gray-600'}`}>
+                    <Tooltip text={`Set Waveform: ${wave}`} show={showTooltips}>
+                        <input type="radio" name={`waveform-${id}`} value={wave} checked={settings.waveform === wave} onChange={() => handleWaveformChange(wave)} className="sr-only" />
+                        <WaveformIcon type={wave} className="w-6 h-4" />
+                        <span>{getWaveformLabel(wave)}</span>
+                    </Tooltip>
                 </label>
                 ))}
             </div>
@@ -86,25 +89,31 @@ const OscillatorPanel: React.FC<{
                         </span>
                     </div>
                     <div className="w-11/12 mx-auto pt-1">
-                        <input
-                            type="range"
-                            min={-25}
-                            max={25}
-                            step={1}
-                            value={settings.detune}
-                            onChange={(e) => handleDetuneChange(parseFloat(e.target.value))}
-                            className="horizontal-slider"
-                            aria-label="Detune"
-                        />
+                        <Tooltip text={`Fine Tune: ${settings.detune} cents`} show={showTooltips}>
+                            <input
+                                type="range"
+                                min={-25}
+                                max={25}
+                                step={1}
+                                value={settings.detune}
+                                onChange={(e) => handleDetuneChange(parseFloat(e.target.value))}
+                                className="horizontal-slider"
+                                aria-label="Detune"
+                            />
+                        </Tooltip>
                     </div>
                 </div>
 
                 {/* Octave Control */}
                 <div className="flex flex-col items-center">
                      <div className="flex items-center gap-2 bg-synth-gray-700 rounded-full p-1">
-                        <button onClick={() => handleOctaveChange(-1)} disabled={settings.octave <= -2} className="w-6 h-6 rounded-full bg-synth-gray-600 text-white font-bold hover:bg-synth-gray-500 disabled:opacity-50">-</button>
+                        <Tooltip text="Osc Octave Down" show={showTooltips}>
+                            <button onClick={() => handleOctaveChange(-1)} disabled={settings.octave <= -2} className="w-6 h-6 rounded-full bg-synth-gray-600 text-white font-bold hover:bg-synth-gray-500 disabled:opacity-50">-</button>
+                        </Tooltip>
                         <span className="w-8 text-center text-base font-mono font-bold text-white tabular-nums">{settings.octave}</span>
-                        <button onClick={() => handleOctaveChange(1)} disabled={settings.octave >= 2} className="w-6 h-6 rounded-full bg-synth-gray-600 text-white font-bold hover:bg-synth-gray-500 disabled:opacity-50">+</button>
+                        <Tooltip text="Osc Octave Up" show={showTooltips}>
+                            <button onClick={() => handleOctaveChange(1)} disabled={settings.octave >= 2} className="w-6 h-6 rounded-full bg-synth-gray-600 text-white font-bold hover:bg-synth-gray-500 disabled:opacity-50">+</button>
+                        </Tooltip>
                     </div>
                     <label className="text-sm font-medium text-synth-gray-500 mt-2">Octave</label>
                 </div>
@@ -369,7 +378,7 @@ export const Controls: React.FC<ControlsProps> = ({
                 <div className={`grid grid-cols-1 ${isSingleOscillatorMode ? 'sm:grid-cols-1' : 'sm:grid-cols-[2fr_1fr_2fr]'} gap-4 items-stretch flex-grow`}>
                     {/* Oscillator 1 */}
                     <div className="bg-synth-gray-900/50 p-4 rounded-lg">
-                        <OscillatorPanel id={1} settings={osc1} onSettingsChange={setOsc1} isSingleOscillatorMode={isSingleOscillatorMode} />
+                        <OscillatorPanel id={1} settings={osc1} onSettingsChange={setOsc1} isSingleOscillatorMode={isSingleOscillatorMode} showTooltips={showTooltips} />
                     </div>
 
                     {!isSingleOscillatorMode && (
@@ -386,7 +395,7 @@ export const Controls: React.FC<ControlsProps> = ({
 
                         {/* Oscillator 2 */}
                         <div className="bg-synth-gray-900/50 p-4 rounded-lg">
-                            <OscillatorPanel id={2} settings={osc2} onSettingsChange={setOsc2} isSingleOscillatorMode={isSingleOscillatorMode} />
+                            <OscillatorPanel id={2} settings={osc2} onSettingsChange={setOsc2} isSingleOscillatorMode={isSingleOscillatorMode} showTooltips={showTooltips} />
                         </div>
                     </>
                     )}

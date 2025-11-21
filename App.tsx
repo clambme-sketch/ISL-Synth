@@ -3,19 +3,23 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Keyboard } from './components/Keyboard';
 import { Controls } from './components/Controls';
 import { AudioEngine } from './services/audioService';
-import type { ADSREnvelope, OscillatorSettings, SynthPreset, LoopEvent, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, PresetCategory } from './types';
-import { KEY_MAP, SYNTH_PRESETS, KEYBOARD_NOTES, DEFAULT_FILTER_SETTINGS, DEFAULT_REVERB_SETTINGS, DEFAULT_DELAY_SETTINGS, DEFAULT_SATURATION_SETTINGS, DEFAULT_CHORUS_SETTINGS, DEFAULT_PHASER_SETTINGS, DEFAULT_LFO_SETTINGS } from './constants';
+import type { ADSREnvelope, OscillatorSettings, SynthPreset, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, PresetCategory, ArpeggiatorSettings, SongMeasure, SongPattern } from './types';
+import { KEY_MAP, SYNTH_PRESETS, KEYBOARD_NOTES, DEFAULT_FILTER_SETTINGS, DEFAULT_REVERB_SETTINGS, DEFAULT_DELAY_SETTINGS, DEFAULT_SATURATION_SETTINGS, DEFAULT_CHORUS_SETTINGS, DEFAULT_PHASER_SETTINGS, DEFAULT_LFO_SETTINGS, DEFAULT_ARP_SETTINGS } from './constants';
 import { SidePanel } from './components/SidePanel';
 import { Visualizer } from './components/Visualizer';
 import { SequencerPanel } from './components/SequencerPanel';
 import { useMetronome } from './hooks/useMetronome';
 import { useLooper } from './hooks/useLooper';
 import { encodeWAV } from './services/wavEncoder';
-import { getChordNotes, getDiatonicChordNotesForKey, getDisplayKeys, formatNoteName } from './services/musicTheory';
+import { getChordNotes, getDiatonicChordNotesForKey, getDisplayKeys, formatNoteName, NOTE_NAME_TO_CHROMATIC_INDEX } from './services/musicTheory';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ChordHelperPanel as ChordToolsPanel } from './components/ChordHelperPanel';
 import { EffectsPanel } from './components/EffectsPanel';
 import { LFOPanel } from './components/LFOPanel';
+import { ArpeggiatorPanel } from './components/ArpeggiatorPanel';
+import { useArpeggiator } from './hooks/useArpeggiator';
+import { SongBuilderPanel } from './components/SongBuilderPanel';
+import { useSongPlayer } from './hooks/useSongPlayer';
 
 const PITCH_BEND_AMOUNT = 200;
 
@@ -126,6 +130,19 @@ const App: React.FC = () => {
   const [phaserSettings, setPhaserSettings] = useState<PhaserSettings>(DEFAULT_PHASER_SETTINGS);
   const [lfoSettings, setLfoSettings] = useState<LFOSettings>(DEFAULT_LFO_SETTINGS);
 
+  // --- ARPEGGIATOR STATE ---
+  const [arpSettings, setArpSettings] = useState<ArpeggiatorSettings>(DEFAULT_ARP_SETTINGS);
+
+  // --- SONG BUILDER STATE ---
+  // Initialize with 1 slot per measure
+  const [songPatterns, setSongPatterns] = useState<SongPattern[]>([
+      { id: 'p1', name: 'Pattern 1', sequence: Array(4).fill(null).map(() => ({ id: crypto.randomUUID(), chords: [null] })) }
+  ]);
+  const [activePatternIndex, setActivePatternIndex] = useState(0);
+  const [sequencerHeldNotes, setSequencerHeldNotes] = useState<Set<string>>(new Set());
+  // Separate metronome state for Song Builder
+  const [songMetronomeOn, setSongMetronomeOn] = useState(false);
+
   const activeChordsRef = useRef<Map<string, string[]>>(new Map());
   const [activeChords, setActiveChords] = useState<Map<string, string[]>>(new Map());
   
@@ -133,7 +150,7 @@ const App: React.FC = () => {
 
   const audioEngineRef = useRef<AudioEngine | null>(null);
   const prevOctaveOffset = usePrevious(octaveOffset);
-  const sustainOnRef = useRef(sustainOn); // Ref for MIDI callbacks
+  const sustainOnRef = useRef(sustainOn); 
   useEffect(() => { sustainOnRef.current = sustainOn; }, [sustainOn]);
 
   // Create a ref to hold all synth settings. This avoids stale closures in callbacks.
@@ -149,10 +166,10 @@ const App: React.FC = () => {
     musicKey,
     diatonicScale,
     activeCategory,
-    sampleVolume
+    sampleVolume,
+    arpSettings
   });
 
-  // Effect to keep the ref updated with the latest state on every render
   useEffect(() => {
     synthSettingsRef.current = {
       adsr,
@@ -166,12 +183,47 @@ const App: React.FC = () => {
       musicKey,
       diatonicScale,
       activeCategory,
-      sampleVolume
+      sampleVolume,
+      arpSettings
     };
   }); 
 
   const { isMetronomePlaying, bpm, setBpm, toggleMetronome, metronomeTick, beatInfo } = useMetronome({
     audioContext: audioEngineRef.current?.getAudioContext() ?? null,
+  });
+
+  // --- ARPEGGIATOR LOGIC ---
+  const handleArpPlayNote = useCallback((note: string, time: number, duration: number) => {
+      if (!audioEngineRef.current) return;
+      const settings = synthSettingsRef.current;
+      
+      audioEngineRef.current.playNote(
+          note, 
+          settings.adsr, 
+          settings.osc1, 
+          settings.osc2, 
+          settings.oscMix, 
+          time, 
+          note, 
+          settings.activeCategory
+      );
+
+      audioEngineRef.current.stopNote(note, settings.adsr.release, time + duration);
+  }, []);
+
+  // Combine all inputs for Arp: Pressed keys, MIDI, Sustained keys, Sequencer (Song Builder)
+  const allHeldNotes = useMemo(() => {
+      // We explicitly add `sustainedNotes.keys()` here to include notes held by pedal
+      return new Set([...pressedNotes, ...midiPressedNotes, ...sustainedNotes.keys(), ...sequencerHeldNotes]);
+  }, [pressedNotes, midiPressedNotes, sustainedNotes, sequencerHeldNotes]);
+
+  useArpeggiator({
+      bpm,
+      settings: arpSettings,
+      heldNotes: allHeldNotes,
+      audioContext: audioEngineRef.current?.getAudioContext() ?? null,
+      onPlayNote: handleArpPlayNote,
+      octaveOffset: octaveOffset
   });
 
   const looperNoteOn = useCallback((note: string, time?: number) => {
@@ -205,6 +257,267 @@ const App: React.FC = () => {
   
   const [isDownloading, setIsDownloading] = useState(false);
 
+
+  // --- NOTE HANDLING ---
+
+  const handleNoteDown = useCallback((note: string) => {
+    if (!isInitialized || !audioEngineRef.current) return;
+    
+    const settings = synthSettingsRef.current;
+    
+    // Add to pressed notes (this triggers Arp via hook if ON)
+    setPressedNotes(prev => new Set(prev).add(note));
+    
+    // If Arp is ON, we DON'T play audio directly.
+    if (settings.arpSettings.on) return;
+
+    const finalRootNote = transposeNote(note, settings.octaveOffset);
+
+    if (settings.autoChordsOn) {
+        const chordNotes = getChordNotes(finalRootNote, settings.chordMode, { key: settings.musicKey, scale: settings.diatonicScale });
+        activeChordsRef.current.set(note, chordNotes);
+        setActiveChords(prev => new Map(prev).set(note, chordNotes));
+        chordNotes.forEach(chordNote => {
+            audioEngineRef.current?.playNote(chordNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, finalRootNote, settings.activeCategory);
+            looperRecordNoteOn(chordNote);
+        });
+    } else {
+        audioEngineRef.current.playNote(finalRootNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
+        looperRecordNoteOn(finalRootNote);
+    }
+    
+    // If we press a key that was sustained, we remove it from the sustain map (re-triggering)
+    setSustainedNotes(prev => { const newMap = new Map(prev); newMap.delete(note); return newMap; });
+    setSustainedChords(prev => { const newMap = new Map(prev); newMap.delete(note); return newMap; });
+
+  }, [isInitialized, looperRecordNoteOn]);
+
+  const handleNoteUp = useCallback((note: string) => {
+    if (!isInitialized || !audioEngineRef.current) return;
+    
+    const settings = synthSettingsRef.current;
+    
+    // Remove from pressed notes
+    setPressedNotes(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(note);
+        return newSet;
+    });
+
+    // ARPEGGIATOR LOGIC WITH SUSTAIN
+    if (settings.arpSettings.on) {
+        // If sustain pedal is held, we add the released note to 'sustainedNotes'
+        // so it remains in the 'allHeldNotes' set for the Arp.
+        if (settings.sustainOn) {
+            setSustainedNotes(prev => new Map(prev).set(note, settings.octaveOffset));
+        }
+        return;
+    }
+
+    // NORMAL PLAY LOGIC
+    const stopSingleNote = () => {
+        const finalNote = transposeNote(note, settings.octaveOffset);
+        looperRecordNoteOff(finalNote);
+        if (settings.sustainOn) {
+            setSustainedNotes(prev => new Map(prev).set(note, settings.octaveOffset));
+        } else {
+            audioEngineRef.current?.stopNote(finalNote, settings.adsr.release);
+        }
+    };
+
+    const stopChord = () => {
+        const chordNotes = activeChordsRef.current.get(note);
+        if (chordNotes) {
+            chordNotes.forEach(chordNote => looperRecordNoteOff(chordNote));
+            if (settings.sustainOn) {
+                setSustainedChords(prev => new Map(prev).set(note, { notes: chordNotes, offset: settings.octaveOffset }));
+            } else {
+                chordNotes.forEach(chordNote => audioEngineRef.current?.stopNote(chordNote, settings.adsr.release));
+            }
+            activeChordsRef.current.delete(note);
+            setActiveChords(prev => { const newMap = new Map(prev); newMap.delete(note); return newMap; });
+        }
+    };
+
+    if (activeChordsRef.current.has(note)) stopChord();
+    else stopSingleNote();
+  }, [isInitialized, looperRecordNoteOff]);
+
+  // SUSTAIN PEDAL RELEASE EFFECT
+  useEffect(() => {
+    if (!sustainOn) {
+        // When pedal is released, stop all notes currently in the sustained map
+        // UNLESS they are physically pressed again (though usually pressedNotes handles that)
+        
+        // 1. Stop Single Sustained Notes
+        sustainedNotes.forEach((offset, note) => {
+             if (!pressedNotes.has(note)) {
+                 const finalNote = transposeNote(note, offset);
+                 audioEngineRef.current?.stopNote(finalNote, adsr.release);
+                 looperRecordNoteOff(finalNote);
+             }
+        });
+        setSustainedNotes(new Map());
+
+        // 2. Stop Sustained Chords
+        sustainedChords.forEach(({ notes }, rootNote) => {
+            if (!pressedNotes.has(rootNote)) {
+                notes.forEach(n => {
+                    audioEngineRef.current?.stopNote(n, adsr.release);
+                    looperRecordNoteOff(n);
+                });
+            }
+        });
+        setSustainedChords(new Map());
+    }
+  }, [sustainOn, pressedNotes, adsr.release, looperRecordNoteOff]);
+
+
+  // --- SONG BUILDER LOGIC ---
+
+  // Song Pattern Management
+  const handlePatternAdd = () => {
+      setSongPatterns(prev => [
+          ...prev,
+          { 
+              id: crypto.randomUUID(), 
+              name: `Pattern ${prev.length + 1}`, 
+              sequence: Array(4).fill(null).map(() => ({ id: crypto.randomUUID(), chords: [null] })) 
+          }
+      ]);
+      setActivePatternIndex(prev => prev + 1); // Switch to new pattern
+  };
+
+  const handlePatternDelete = (index: number) => {
+      if (songPatterns.length <= 1) return;
+      const newPatterns = songPatterns.filter((_, i) => i !== index);
+      setSongPatterns(newPatterns);
+      if (activePatternIndex >= index) {
+          setActivePatternIndex(Math.max(0, activePatternIndex - 1));
+      }
+  };
+
+  const handleSequenceChange = (newSequence: SongMeasure[]) => {
+      setSongPatterns(prev => {
+          const newPatterns = [...prev];
+          newPatterns[activePatternIndex] = {
+              ...newPatterns[activePatternIndex],
+              sequence: newSequence
+          };
+          return newPatterns;
+      });
+  };
+
+  const handleSongPlayStep = useCallback((chordName: string) => {
+      const settings = synthSettingsRef.current;
+      
+      // Check if it is an Absolute Chord (starts with A-G) or Roman Numeral
+      const isAbsolute = /^[A-G]/.test(chordName);
+
+      if (isAbsolute) {
+          // Parse Absolute Chord Name (e.g., "Cm", "F#7")
+          const match = chordName.match(/^([A-G](?:#|b|♭)?)(.*)$/);
+          if (match) {
+              const root = match[1];
+              const suffix = match[2];
+              
+              let mode: ChordMode = 'major';
+              if (suffix === 'm') mode = 'minor';
+              else if (suffix === '7') mode = 'dominant7';
+              else if (suffix === '°' || suffix === 'dim') mode = 'diminished';
+              else if (suffix === '+' || suffix === 'aug') mode = 'augmented';
+              
+              // Default to Octave 4
+              const rootNote = `${root}4`;
+              
+              // Get notes for absolute chord
+              const notes = getChordNotes(rootNote, mode, { key: settings.musicKey, scale: settings.diatonicScale });
+              
+              setSequencerHeldNotes(new Set(notes));
+              
+              if (!settings.arpSettings.on) {
+                  notes.forEach(n => {
+                      audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
+                  });
+              }
+          }
+      } else {
+          // Parse Roman Numeral (Relative to Key)
+          
+          // Clean the numeral
+          const rawRoman = chordName.replace('°', '').replace('+', ''); 
+          const degreeIdx = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii'].indexOf(rawRoman.toLowerCase());
+          
+          if (degreeIdx === -1) return;
+          
+          // Determine Intervals based on current SCALE setting
+          const scaleIntervals = settings.diatonicScale === 'major' 
+            ? [0, 2, 4, 5, 7, 9, 11] 
+            : [0, 2, 3, 5, 7, 8, 10];
+            
+          const interval = scaleIntervals[degreeIdx];
+          
+          // Find Root Note chromatic index
+          const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+          let keyIndex = noteNames.indexOf(settings.musicKey);
+          if (keyIndex === -1) {
+               // Handle flat keys if passed
+               const flatToSharp: Record<string, string> = {'Db':'C#', 'Eb':'D#', 'Gb':'F#', 'Ab':'G#', 'Bb':'A#'};
+               if (flatToSharp[settings.musicKey]) keyIndex = noteNames.indexOf(flatToSharp[settings.musicKey]);
+               if (keyIndex === -1) keyIndex = 0;
+          }
+          
+          const rootChroma = (keyIndex + interval) % 12;
+          const rootNoteName = noteNames[rootChroma]; 
+          
+          // Assume Octave 4 for the chord root
+          const rootNote = `${rootNoteName}4`;
+          
+          // Generate chord notes based on current scale context
+          const notes = getChordNotes(rootNote, 'diatonic', { key: settings.musicKey, scale: settings.diatonicScale });
+          
+          setSequencerHeldNotes(new Set(notes));
+          
+          if (!settings.arpSettings.on) {
+              notes.forEach(n => {
+                  audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
+              });
+          }
+      }
+      
+  }, []);
+  
+  const handleSongStopStep = useCallback((chordRoman: string) => {
+      setSequencerHeldNotes(prev => {
+          const notesToStop = Array.from(prev);
+          const settings = synthSettingsRef.current;
+          
+          if (!settings.arpSettings.on) {
+              notesToStop.forEach(n => {
+                   audioEngineRef.current?.stopNote(n, settings.adsr.release);
+              });
+          }
+          return new Set();
+      });
+  }, []);
+
+  const { isPlaying: isSongPlaying, togglePlay: toggleSongPlay, currentMeasureIndex, stop: stopSong } = useSongPlayer({
+      bpm,
+      sequence: songPatterns[activePatternIndex].sequence,
+      onPlayChord: handleSongPlayStep,
+      onStopChord: handleSongStopStep,
+      audioContext: audioEngineRef.current?.getAudioContext() ?? null,
+      isMetronomeEnabled: songMetronomeOn
+  });
+  
+  const handleSongClear = () => {
+      stopSong();
+      setSequencerHeldNotes(new Set());
+      // Reset to default 1-slot measures
+      handleSequenceChange(Array(4).fill(null).map(() => ({ id: crypto.randomUUID(), chords: [null] })));
+  };
+
+
   const highlightedNotes = useMemo(() => {
     const notesToHighlight = new Map<string, string[]>();
 
@@ -235,9 +548,12 @@ const App: React.FC = () => {
     };
 
     pressedNotes.forEach(note => setActive(note));
-    sustainedNotes.forEach((_, note) => setActive(note));
+    sustainedNotes.forEach((_, note) => setActive(note)); // Highlight sustained notes too
     midiPressedNotes.forEach(note => setActive(untransposeNote(formatNoteName(note, false), octaveOffset)));
     midiSustainedNotes.forEach(note => setActive(untransposeNote(formatNoteName(note, false), octaveOffset)));
+    
+    // Highlight Sequencer notes
+    sequencerHeldNotes.forEach(note => setActive(untransposeNote(note, octaveOffset)));
 
     activeChords.forEach((chordNotes) => {
         chordNotes.forEach(chordNote => setActive(untransposeNote(chordNote, octaveOffset)));
@@ -247,7 +563,7 @@ const App: React.FC = () => {
     });
     
     return notesToHighlight;
-  }, [pressedNotes, sustainedNotes, midiPressedNotes, midiSustainedNotes, activeChords, sustainedChords, octaveOffset, chordHelperOn, musicKey]);
+  }, [pressedNotes, sustainedNotes, midiPressedNotes, midiSustainedNotes, activeChords, sustainedChords, octaveOffset, chordHelperOn, musicKey, sequencerHeldNotes]);
 
 
   const handleInit = () => {
@@ -279,41 +595,56 @@ const App: React.FC = () => {
             case 9: // Note On
                 if (velocity > 0) {
                     const note = midiToNoteName(noteNumber);
-                    audioEngineRef.current.playNote(note, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
-                    looperRecordNoteOn(note);
+                    
+                    // Update MIDI State state
                     setMidiPressedNotes(prev => new Set(prev).add(note));
                     setMidiSustainedNotes(prev => {
                         const newSet = new Set(prev);
                         newSet.delete(note);
                         return newSet;
                     });
+
+                    // Play Logic
+                    if (!settings.arpSettings.on) {
+                        audioEngineRef.current.playNote(note, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
+                        looperRecordNoteOn(note);
+                    }
+
                 } else { // Note On with velocity 0 is a Note Off
                     const note = midiToNoteName(noteNumber);
-                    looperRecordNoteOff(note);
+                    
                     setMidiPressedNotes(prev => {
                         const newSet = new Set(prev);
                         newSet.delete(note);
                         return newSet;
                     });
-                    if (sustainOnRef.current) {
-                        setMidiSustainedNotes(prev => new Set(prev).add(note));
-                    } else {
-                        audioEngineRef.current.stopNote(note, settings.adsr.release);
+
+                    if (!settings.arpSettings.on) {
+                        looperRecordNoteOff(note);
+                        if (sustainOnRef.current) {
+                            setMidiSustainedNotes(prev => new Set(prev).add(note));
+                        } else {
+                            audioEngineRef.current.stopNote(note, settings.adsr.release);
+                        }
                     }
                 }
                 break;
             case 8: // Note Off
                 const note = midiToNoteName(noteNumber);
-                looperRecordNoteOff(note);
+                
                 setMidiPressedNotes(prev => {
                     const newSet = new Set(prev);
                     newSet.delete(note);
                     return newSet;
                 });
-                if (sustainOnRef.current) {
-                    setMidiSustainedNotes(prev => new Set(prev).add(note));
-                } else {
-                    audioEngineRef.current.stopNote(note, settings.adsr.release);
+
+                if (!settings.arpSettings.on) {
+                    looperRecordNoteOff(note);
+                    if (sustainOnRef.current) {
+                        setMidiSustainedNotes(prev => new Set(prev).add(note));
+                    } else {
+                        audioEngineRef.current.stopNote(note, settings.adsr.release);
+                    }
                 }
                 break;
             case 11: // Control Change
@@ -443,73 +774,11 @@ const App: React.FC = () => {
     setLfoSettings(preset.lfo ?? DEFAULT_LFO_SETTINGS);
   };
 
-  const handleNoteDown = useCallback((note: string) => {
-    if (!isInitialized || !audioEngineRef.current) return;
-    
-    const settings = synthSettingsRef.current;
-    
-    const finalRootNote = transposeNote(note, settings.octaveOffset);
-
-    if (settings.autoChordsOn) {
-        const chordNotes = getChordNotes(finalRootNote, settings.chordMode, { key: settings.musicKey, scale: settings.diatonicScale });
-        activeChordsRef.current.set(note, chordNotes);
-        setActiveChords(prev => new Map(prev).set(note, chordNotes));
-        chordNotes.forEach(chordNote => {
-            audioEngineRef.current?.playNote(chordNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, finalRootNote, settings.activeCategory);
-            looperRecordNoteOn(chordNote);
-        });
-    } else {
-        audioEngineRef.current.playNote(finalRootNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
-        looperRecordNoteOn(finalRootNote);
-    }
-    
-    setPressedNotes(prev => new Set(prev).add(note));
-    setSustainedNotes(prev => { const newMap = new Map(prev); newMap.delete(note); return newMap; });
-    setSustainedChords(prev => { const newMap = new Map(prev); newMap.delete(note); return newMap; });
-
-  }, [isInitialized, looperRecordNoteOn]);
-
-  const handleNoteUp = useCallback((note: string) => {
-    if (!isInitialized || !audioEngineRef.current) return;
-    
-    const settings = synthSettingsRef.current;
-    
-    setPressedNotes(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(note);
-        return newSet;
-    });
-
-    const stopSingleNote = () => {
-        const finalNote = transposeNote(note, settings.octaveOffset);
-        looperRecordNoteOff(finalNote);
-        if (settings.sustainOn) {
-            setSustainedNotes(prev => new Map(prev).set(note, settings.octaveOffset));
-        } else {
-            audioEngineRef.current?.stopNote(finalNote, settings.adsr.release);
-        }
-    };
-
-    const stopChord = () => {
-        const chordNotes = activeChordsRef.current.get(note);
-        if (chordNotes) {
-            chordNotes.forEach(chordNote => looperRecordNoteOff(chordNote));
-            if (settings.sustainOn) {
-                setSustainedChords(prev => new Map(prev).set(note, { notes: chordNotes, offset: settings.octaveOffset }));
-            } else {
-                chordNotes.forEach(chordNote => audioEngineRef.current?.stopNote(chordNote, settings.adsr.release));
-            }
-            activeChordsRef.current.delete(note);
-            setActiveChords(prev => { const newMap = new Map(prev); newMap.delete(note); return newMap; });
-        }
-    };
-
-    if (activeChordsRef.current.has(note)) stopChord();
-    else stopSingleNote();
-  }, [isInitialized, looperRecordNoteOff]);
-
   useEffect(() => {
     if (!audioEngineRef.current || prevOctaveOffset === undefined || prevOctaveOffset === octaveOffset) return;
+
+    // If Arp is ON, we don't re-trigger notes on octave shift, the hook handles transposition
+    if (synthSettingsRef.current.arpSettings.on) return;
 
     pressedNotes.forEach(note => {
         if (synthSettingsRef.current.autoChordsOn && activeChordsRef.current.has(note)) {
@@ -525,20 +794,6 @@ const App: React.FC = () => {
         handleNoteDown(note);
     });
   }, [octaveOffset, prevOctaveOffset, pressedNotes, handleNoteDown, looperRecordNoteOff]);
-
-  useEffect(() => {
-    const releaseTime = synthSettingsRef.current.adsr.release;
-    if (sustainOn) return;
-
-    sustainedNotes.forEach((offset, note) => audioEngineRef.current?.stopNote(transposeNote(note, offset), releaseTime));
-    setSustainedNotes(new Map());
-
-    sustainedChords.forEach(chordData => chordData.notes.forEach(finalNote => audioEngineRef.current?.stopNote(finalNote, releaseTime)));
-    setSustainedChords(new Map());
-
-    midiSustainedNotes.forEach(note => audioEngineRef.current?.stopNote(note, releaseTime));
-    setMidiSustainedNotes(new Set());
-  }, [sustainOn, sustainedNotes, sustainedChords, midiSustainedNotes]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -616,7 +871,7 @@ const App: React.FC = () => {
         const url = URL.createObjectURL(wavBlob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `synth-loop-${bpm}bpm.wav`;
+        a.download = `ISL-synth-loop-${bpm}bpm.wav`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -639,7 +894,7 @@ const App: React.FC = () => {
     return (
         <div className="flex items-center justify-center min-h-screen bg-synth-gray-900" style={styleProps}>
             <div className="text-center p-8 bg-synth-gray-800 rounded-lg shadow-xl">
-                <h1 className="text-3xl font-bold text-white mb-2">Unnamed ISL Synth</h1>
+                <h1 className="text-3xl font-bold text-white mb-2">ISL Synth</h1>
                 <p className="text-lg text-synth-gray-500 mb-8">by Clark Lambert</p>
                 <button 
                     onClick={handleInit} 
@@ -660,7 +915,7 @@ const App: React.FC = () => {
       <div className="w-full max-w-6xl mx-auto bg-synth-gray-900 shadow-2xl rounded-xl p-4 sm:p-6 lg:p-8 flex flex-col gap-8 transition-colors duration-500">
         <header className="flex justify-center items-center">
             <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-wider">
-                Unnamed ISL Synthesizer
+                ISL Synth
             </h1>
         </header>
         
@@ -686,11 +941,22 @@ const App: React.FC = () => {
             sampleLoop={sampleLoop}
             onSampleLoopChange={handleSampleLoopChange}
           />
-          <LFOPanel
-            settings={lfoSettings}
-            onSettingsChange={setLfoSettings}
-            showTooltips={showTooltips}
-          />
+          <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <LFOPanel
+                    settings={lfoSettings}
+                    onSettingsChange={setLfoSettings}
+                    showTooltips={showTooltips}
+                />
+              </div>
+              <div className="flex-1">
+                  <ArpeggiatorPanel
+                      settings={arpSettings}
+                      onSettingsChange={setArpSettings}
+                      showTooltips={showTooltips}
+                  />
+              </div>
+          </div>
         </main>
       </div>
 
@@ -703,6 +969,7 @@ const App: React.FC = () => {
           sustainOn={sustainOn}
           masterVolume={masterVolume}
           onMasterVolumeChange={setMasterVolume}
+          showTooltips={showTooltips}
         />
         <div className="flex-grow flex flex-col">
           <Keyboard 
@@ -738,6 +1005,7 @@ const App: React.FC = () => {
                     onLoopBarsChange={setLoopBars}
                     isLooping={loopState !== 'idle'}
                     loopBuffer={loopBuffer}
+                    showTooltips={showTooltips}
                 />
            </div>
            
@@ -774,6 +1042,29 @@ const App: React.FC = () => {
               onPhaserChange={setPhaserSettings}
               showTooltips={showTooltips}
             />
+          </div>
+
+          <div className="mt-4">
+              <SongBuilderPanel 
+                patterns={songPatterns}
+                activePatternIndex={activePatternIndex}
+                onPatternChange={setActivePatternIndex}
+                onPatternAdd={handlePatternAdd}
+                onPatternDelete={handlePatternDelete}
+                onSequenceChange={handleSequenceChange}
+                isPlaying={isSongPlaying}
+                onPlayPause={toggleSongPlay}
+                onClear={handleSongClear}
+                currentMeasureIndex={currentMeasureIndex}
+                musicKey={musicKey}
+                onKeyChange={setMusicKey}
+                scale={diatonicScale}
+                onScaleChange={setDiatonicScale}
+                showTooltips={showTooltips}
+                displayKeys={displayKeys}
+                isMetronomePlaying={songMetronomeOn}
+                onToggleMetronome={() => setSongMetronomeOn(prev => !prev)}
+              />
           </div>
 
           <div className="mt-4">

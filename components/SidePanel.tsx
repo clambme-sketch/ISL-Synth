@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { Tooltip } from './Tooltip';
 
 interface SidePanelProps {
     octaveOffset: number;
@@ -9,6 +10,7 @@ interface SidePanelProps {
     sustainOn: boolean;
     masterVolume: number;
     onMasterVolumeChange: (volume: number) => void;
+    showTooltips: boolean;
 }
 
 const OCTAVE_COLORS = [
@@ -27,6 +29,7 @@ export const SidePanel: React.FC<SidePanelProps> = ({
     sustainOn,
     masterVolume,
     onMasterVolumeChange,
+    showTooltips
 }) => {
     const bendPercentage = (pitchBend / maxPitchBend) * 100;
 
@@ -36,45 +39,50 @@ export const SidePanel: React.FC<SidePanelProps> = ({
             <div className="flex flex-col items-center gap-3">
                 <span className="text-xs font-medium text-synth-gray-500 tracking-wider">OCTAVE</span>
                 <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => onOctaveChange(Math.max(-2, octaveOffset - 1))}
-                        className="w-8 h-8 rounded-full bg-synth-gray-700 text-white font-bold text-xl hover:bg-synth-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={octaveOffset <= -2}
-                        aria-label="Decrease octave"
-                    >
-                        -
-                    </button>
+                    <Tooltip text="Octave Down" show={showTooltips}>
+                        <button
+                            onClick={() => onOctaveChange(Math.max(-2, octaveOffset - 1))}
+                            className="w-8 h-8 rounded-full bg-synth-gray-700 text-white font-bold text-xl hover:bg-synth-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={octaveOffset <= -2}
+                            aria-label="Decrease octave"
+                        >
+                            -
+                        </button>
+                    </Tooltip>
                     <div className="flex justify-center items-center gap-1.5">
                         {[-2, -1, 0, 1, 2].map(oct => {
                             const isActive = oct === octaveOffset;
                             const colorClass = OCTAVE_COLORS[oct + 2];
                             return (
-                                <div 
-                                    key={oct}
-                                    onClick={() => onOctaveChange(oct)}
-                                    role="button"
-                                    aria-pressed={isActive}
-                                    tabIndex={0}
-                                    onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') onOctaveChange(oct);}}
-                                    aria-label={`Set octave to ${oct > 0 ? '+' : ''}${oct}`}
-                                    className={`w-4 h-4 rounded-full transition-all duration-200 border-2 border-transparent cursor-pointer
-                                        ${isActive 
-                                            ? `${colorClass} shadow-[0_0_8px_2px_rgba(255,255,255,0.2)] border-white/50` 
-                                            : 'bg-synth-gray-700 hover:bg-synth-gray-600'
-                                        }`
-                                    }
-                                ></div>
+                                <Tooltip key={oct} text={`Octave ${oct > 0 ? '+' : ''}${oct}`} show={showTooltips}>
+                                    <div 
+                                        onClick={() => onOctaveChange(oct)}
+                                        role="button"
+                                        aria-pressed={isActive}
+                                        tabIndex={0}
+                                        onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') onOctaveChange(oct);}}
+                                        aria-label={`Set octave to ${oct > 0 ? '+' : ''}${oct}`}
+                                        className={`w-4 h-4 rounded-full transition-all duration-200 border-2 border-transparent cursor-pointer
+                                            ${isActive 
+                                                ? `${colorClass} shadow-[0_0_8px_2px_rgba(255,255,255,0.2)] border-white/50` 
+                                                : 'bg-synth-gray-700 hover:bg-synth-gray-600'
+                                            }`
+                                        }
+                                    ></div>
+                                </Tooltip>
                             );
                         })}
                     </div>
-                    <button
-                        onClick={() => onOctaveChange(Math.min(2, octaveOffset + 1))}
-                        className="w-8 h-8 rounded-full bg-synth-gray-700 text-white font-bold text-xl hover:bg-synth-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={octaveOffset >= 2}
-                        aria-label="Increase octave"
-                    >
-                        +
-                    </button>
+                    <Tooltip text="Octave Up" show={showTooltips}>
+                        <button
+                            onClick={() => onOctaveChange(Math.min(2, octaveOffset + 1))}
+                            className="w-8 h-8 rounded-full bg-synth-gray-700 text-white font-bold text-xl hover:bg-synth-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={octaveOffset >= 2}
+                            aria-label="Increase octave"
+                        >
+                            +
+                        </button>
+                    </Tooltip>
                 </div>
             </div>
 
@@ -116,15 +124,17 @@ export const SidePanel: React.FC<SidePanelProps> = ({
                     <span className="text-xs font-medium text-synth-gray-500 tracking-wider">MASTER VOLUME</span>
                     <span className="text-xs font-mono text-synth-gray-400">{(masterVolume * 100).toFixed(0)}%</span>
                 </div>
-                <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={masterVolume}
-                    onChange={(e) => onMasterVolumeChange(parseFloat(e.target.value))}
-                    className="horizontal-slider w-full"
-                />
+                <Tooltip text={`Master Volume: ${(masterVolume * 100).toFixed(0)}%`} show={showTooltips}>
+                    <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={masterVolume}
+                        onChange={(e) => onMasterVolumeChange(parseFloat(e.target.value))}
+                        className="horizontal-slider w-full"
+                    />
+                </Tooltip>
             </div>
         </div>
     );

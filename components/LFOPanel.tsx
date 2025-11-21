@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import type { LFOSettings, WaveformType, LFOTarget } from '../types';
 import { ChevronDownIcon, WaveformIcon } from './icons';
@@ -100,13 +99,13 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
         </button>
         <div
             id="lfo-content"
-            className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-[500px] opacity-100 pt-4 mt-4 border-t border-synth-gray-700/50' : 'max-h-0 opacity-0'}`}
+            className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[500px] opacity-100 overflow-visible pt-4 mt-4 border-t border-synth-gray-700/50' : 'max-h-0 opacity-0 overflow-hidden'}`}
         >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-4">
                      <div className="flex items-center justify-between">
-                        <label htmlFor="lfo-toggle" className="text-sm text-synth-gray-500">Enable LFO</label>
-                        <div className="relative">
+                        <label htmlFor="lfo-toggle" className="text-sm text-synth-gray-500 cursor-pointer">Enable LFO</label>
+                        <label className="relative cursor-pointer">
                             <input 
                                 type="checkbox" 
                                 id="lfo-toggle"
@@ -114,16 +113,16 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                                 checked={settings.on} 
                                 onChange={(e) => handleToggle('on')(e.target.checked)}
                             />
-                            <div className={`block w-12 h-6 rounded-full transition-colors cursor-pointer ${settings.on ? 'bg-synth-cyan-500' : 'bg-synth-gray-700'}`}></div>
+                            <div className={`block w-12 h-6 rounded-full transition-colors ${settings.on ? 'bg-synth-cyan-500' : 'bg-synth-gray-700'}`}></div>
                             <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.on ? 'transform translate-x-6' : ''}`}></div>
-                        </div>
+                        </label>
                     </div>
                      
                     <div className="flex gap-4">
                         <div className="flex flex-col gap-2 flex-1">
                             <div className="flex items-center justify-between">
-                                <label htmlFor="lfo-retrigger-toggle" className="text-sm text-synth-gray-500">Retrigger</label>
-                                <div className="relative">
+                                <label htmlFor="lfo-retrigger-toggle" className="text-sm text-synth-gray-500 cursor-pointer">Retrigger</label>
+                                <label className="relative cursor-pointer">
                                     <input 
                                         type="checkbox" 
                                         id="lfo-retrigger-toggle"
@@ -131,16 +130,16 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                                         checked={settings.retrigger} 
                                         onChange={(e) => handleToggle('retrigger')(e.target.checked)}
                                     />
-                                    <div className={`block w-10 h-5 rounded-full transition-colors cursor-pointer ${settings.retrigger ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
+                                    <div className={`block w-10 h-5 rounded-full transition-colors ${settings.retrigger ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
                                     <div className={`dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${settings.retrigger ? 'transform translate-x-5' : ''}`}></div>
-                                </div>
+                                </label>
                             </div>
                         </div>
                         
                         <div className="flex flex-col gap-2 flex-1">
                             <div className="flex items-center justify-between">
-                                <label htmlFor="lfo-keysync-toggle" className="text-sm text-synth-gray-500">Key Sync (FM/AM)</label>
-                                <div className="relative">
+                                <label htmlFor="lfo-keysync-toggle" className="text-sm text-synth-gray-500 cursor-pointer">Key Sync (FM/AM)</label>
+                                <label className="relative cursor-pointer">
                                     <input 
                                         type="checkbox" 
                                         id="lfo-keysync-toggle"
@@ -148,9 +147,9 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                                         checked={settings.keySync || false} 
                                         onChange={(e) => handleToggle('keySync')(e.target.checked)}
                                     />
-                                    <div className={`block w-10 h-5 rounded-full transition-colors cursor-pointer ${settings.keySync ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
+                                    <div className={`block w-10 h-5 rounded-full transition-colors ${settings.keySync ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
                                     <div className={`dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${settings.keySync ? 'transform translate-x-5' : ''}`}></div>
-                                </div>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -203,6 +202,5 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                 </div>
             </div>
         </div>
-    </div>
-  );
+    );
 };

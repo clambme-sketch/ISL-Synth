@@ -32,6 +32,19 @@ export interface LFOSettings {
   keySync?: boolean; // If true, rate is a ratio relative to note frequency (FM)
 }
 
+// --- ARPEGGIATOR ---
+export type ArpDirection = 'up' | 'down' | 'upDown' | 'random' | 'played';
+export type ArpRate = '1/4' | '1/8' | '1/16' | '1/32';
+
+export interface ArpeggiatorSettings {
+    on: boolean;
+    latch: boolean;
+    rate: ArpRate;
+    direction: ArpDirection;
+    range: number; // 1 to 3 octaves
+    gate: number; // 0.1 to 1.0 (note length relative to step)
+}
+
 export type PresetCategory = 'Simple' | 'Subtractive' | 'AM' | 'Sampling' | 'FM';
 
 export interface SynthPreset {
@@ -110,4 +123,16 @@ export interface PhaserSettings {
   rate: number; // in Hz
   depth: number; // 0 to 1
   baseFrequency: number; // in Hz
+}
+
+// --- SONG BUILDER ---
+export interface SongMeasure {
+    id: string;
+    chords: (string | null)[]; // Array of chords for the measure (currently supports 2: [beat 1, beat 3])
+}
+
+export interface SongPattern {
+    id: string;
+    name: string;
+    sequence: SongMeasure[];
 }
