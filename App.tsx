@@ -11,7 +11,7 @@ import { SequencerPanel } from './components/SequencerPanel';
 import { useMetronome } from './hooks/useMetronome';
 import { useLooper } from './hooks/useLooper';
 import { encodeWAV } from './services/wavEncoder';
-import { getChordNotes, getDiatonicChordNotesForKey, getDisplayKeys, formatNoteName, NOTE_NAME_TO_CHROMATIC_INDEX } from './services/musicTheory';
+import { getChordNotes, getDiatonicChordNotesForKey, getDisplayKeys, formatNoteName } from './services/musicTheory';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ChordHelperPanel as ChordToolsPanel } from './components/ChordHelperPanel';
 import { EffectsPanel } from './components/EffectsPanel';
