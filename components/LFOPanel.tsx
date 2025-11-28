@@ -202,5 +202,6 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                 </div>
             </div>
         </div>
-    );
+    </div>
+  );
 };
