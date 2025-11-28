@@ -45,6 +45,9 @@ export const useArpeggiator = ({
     const settingsRef = useRef(settings);
     const sortedNotesRef = useRef<string[]>([]);
     const latchedNotesRef = useRef<Set<string>>(new Set());
+    
+    // Ref to hold scheduler to avoid circular deps
+    const schedulerRef = useRef<() => void>(() => {});
 
     // Update settings ref
     useEffect(() => {
@@ -59,9 +62,6 @@ export const useArpeggiator = ({
         let notesToPlay: Set<string>;
 
         if (isLatchOn) {
-            // STANDARD LATCH LOGIC:
-            // 1. If keys are pressed, they define the pattern (and update the latch memory).
-            // 2. If all keys are released, we keep playing the latch memory.
             if (currentHeld.size > 0) {
                 latchedNotesRef.current = new Set(currentHeld);
                 notesToPlay = currentHeld;
@@ -69,24 +69,20 @@ export const useArpeggiator = ({
                 notesToPlay = latchedNotesRef.current;
             }
         } else {
-            // Latch Off: Only play what is physically held
             latchedNotesRef.current.clear();
             notesToPlay = currentHeld;
         }
 
-        // --- SORTING & PATTERN GENERATION ---
         if (notesToPlay.size === 0) {
             sortedNotesRef.current = [];
             return;
         }
 
-        // 1. Base Notes Sort
         let notes = Array.from(notesToPlay);
         if (settings.direction !== 'played' && settings.direction !== 'random') {
             notes.sort((a, b) => getMidiValue(a) - getMidiValue(b));
         }
 
-        // 2. Expand for Octaves
         let extendedNotes: string[] = [];
         for (let oct = 0; oct < settings.range; oct++) {
             const octaveShifted = notes.map(note => {
@@ -97,7 +93,6 @@ export const useArpeggiator = ({
             extendedNotes = [...extendedNotes, ...octaveShifted];
         }
 
-        // 3. Apply Pattern Direction
         let finalPattern: string[] = [];
         if (settings.direction === 'up' || settings.direction === 'played') {
             finalPattern = extendedNotes;
@@ -113,7 +108,7 @@ export const useArpeggiator = ({
 
     }, [heldNotes, settings.direction, settings.range, settings.latch]);
 
-    // Define scheduler with useCallback to make it a stable dependency
+    // Define scheduler
     const scheduler = useCallback(() => {
         if (!audioContext || !settingsRef.current.on) return;
         
@@ -145,7 +140,6 @@ export const useArpeggiator = ({
                     noteToPlay = pattern[stepIndexRef.current % pattern.length];
                 }
                 
-                // Calculate transposed note string
                 const midi = getMidiValue(noteToPlay);
                 const transposedNote = getNoteFromMidi(midi + (octaveOffset * 12));
 
@@ -156,8 +150,12 @@ export const useArpeggiator = ({
             nextNoteTimeRef.current += stepDuration;
         }
 
-        timerRef.current = window.setTimeout(scheduler, 25);
+        timerRef.current = window.setTimeout(() => schedulerRef.current(), 25);
     }, [audioContext, bpm, octaveOffset, onPlayNote]);
+
+    useEffect(() => {
+        schedulerRef.current = scheduler;
+    }, [scheduler]);
 
     // Start/Stop Scheduler
     useEffect(() => {

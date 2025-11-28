@@ -33,6 +33,9 @@ export const useSongPlayer = ({ bpm, sequence, onPlayChord, onStopChord, audioCo
     const activeChordRef = useRef<string | null>(null);
     const lastBeatIntegerRef = useRef<number>(-1);
 
+    // Ref to hold the schedule function to avoid circular dependency in useCallback
+    const scheduleRef = useRef<() => void>(() => {});
+
     // Keep refs updated
     useEffect(() => { bpmRef.current = bpm; }, [bpm]);
     useEffect(() => { sequenceRef.current = sequence; }, [sequence]);
@@ -42,7 +45,7 @@ export const useSongPlayer = ({ bpm, sequence, onPlayChord, onStopChord, audioCo
     useEffect(() => { audioContextRef.current = audioContext; }, [audioContext]);
 
     const cleanup = useCallback(() => {
-        if (timerRef.current) {
+        if (timerRef.current !== null) {
             clearTimeout(timerRef.current);
             timerRef.current = null;
         }
@@ -148,8 +151,14 @@ export const useSongPlayer = ({ bpm, sequence, onPlayChord, onStopChord, audioCo
             }
         }
 
-        timerRef.current = window.setTimeout(schedule, 15);
+        // Recursively call via ref to avoid dependency cycle
+        timerRef.current = window.setTimeout(() => scheduleRef.current(), 15);
     }, [playClick]);
+
+    // Update the scheduleRef whenever schedule changes
+    useEffect(() => {
+        scheduleRef.current = schedule;
+    }, [schedule]);
 
     const togglePlay = useCallback(() => {
         setIsPlaying(prev => {
@@ -162,7 +171,7 @@ export const useSongPlayer = ({ bpm, sequence, onPlayChord, onStopChord, audioCo
                 }
                 startTimeRef.current = performance.now();
                 lastBeatIntegerRef.current = -1;
-                schedule();
+                schedule(); // Start the loop
                 return true;
             }
         });
@@ -170,7 +179,6 @@ export const useSongPlayer = ({ bpm, sequence, onPlayChord, onStopChord, audioCo
 
     // Reset playback if sequence structure changes or BPM changes
     useEffect(() => {
-        // Safe reset without reading 'isPlaying' to avoid linter dependency issues
         cleanup();
         setIsPlaying(false);
     }, [bpm, sequence, cleanup]); 

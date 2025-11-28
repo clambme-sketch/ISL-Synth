@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 const SCHEDULING_AHEAD_TIME = 0.1; // seconds
@@ -21,6 +22,8 @@ export const useMetronome = ({ audioContext }: UseMetronomeProps) => {
     const timerRef = useRef<number | null>(null);
     const nextNoteTimeRef = useRef(0);
     const lastBeatRef = useRef<1 | 2 | 3 | 4>(4);
+    
+    const schedulerRef = useRef<() => void>(() => {});
 
     const scheduleTick = useCallback(() => {
         if (!audioContext) return;
@@ -50,8 +53,12 @@ export const useMetronome = ({ audioContext }: UseMetronomeProps) => {
             const secondsPerBeat = 60.0 / bpm;
             nextNoteTimeRef.current += secondsPerBeat;
         }
-        timerRef.current = window.setTimeout(scheduler, 25);
+        timerRef.current = window.setTimeout(() => schedulerRef.current(), 25);
     }, [audioContext, bpm, scheduleTick]);
+
+    useEffect(() => {
+        schedulerRef.current = scheduler;
+    }, [scheduler]);
 
     const toggleMetronome = () => {
         if (!audioContext) return;
@@ -76,7 +83,6 @@ export const useMetronome = ({ audioContext }: UseMetronomeProps) => {
     };
     
     useEffect(() => {
-        // Stop metronome if audio context is lost
         if (!audioContext && isPlaying) {
             setIsPlaying(false);
             if (timerRef.current) {

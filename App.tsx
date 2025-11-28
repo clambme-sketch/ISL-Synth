@@ -487,7 +487,7 @@ const App: React.FC = () => {
       
   }, []);
   
-  const handleSongStopStep = useCallback((chordRoman: string) => {
+  const handleSongStopStep = useCallback((_: string) => {
       setSequencerHeldNotes(prev => {
           const notesToStop = Array.from(prev);
           const settings = synthSettingsRef.current;
