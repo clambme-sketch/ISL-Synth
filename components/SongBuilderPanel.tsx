@@ -25,6 +25,9 @@ interface SongBuilderPanelProps {
     onToggleMetronome: () => void;
 }
 
+// Simple ID generator to avoid crypto environment issues
+const generateId = () => Math.random().toString(36).substring(2, 9);
+
 // Strictly typed palettes for drag source
 const AVAILABLE_CHORDS_MAJOR = ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'];
 const AVAILABLE_CHORDS_MINOR = ['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII'];
@@ -126,7 +129,7 @@ export const SongBuilderPanel: React.FC<SongBuilderPanelProps> = ({
     };
 
     const addMeasure = () => {
-        onSequenceChange([...songSequence, { id: crypto.randomUUID(), chords: [null] }]);
+        onSequenceChange([...songSequence, { id: generateId(), chords: [null] }]);
     };
 
     const removeMeasure = () => {

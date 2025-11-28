@@ -23,6 +23,9 @@ import { useSongPlayer } from './hooks/useSongPlayer';
 
 const PITCH_BEND_AMOUNT = 200;
 
+// Simple ID generator to avoid crypto environment issues
+const generateId = () => Math.random().toString(36).substring(2, 9);
+
 const THEMES: Record<PresetCategory, { primary: string; secondary: string }> = {
     'Simple': { primary: '0 255 255', secondary: '138 43 226' }, // Cyan / Purple
     'Subtractive': { primary: '255 165 0', secondary: '220 20 60' }, // Orange / Red
@@ -136,7 +139,7 @@ const App: React.FC = () => {
   // --- SONG BUILDER STATE ---
   // Initialize with 1 slot per measure
   const [songPatterns, setSongPatterns] = useState<SongPattern[]>([
-      { id: 'p1', name: 'Pattern 1', sequence: Array(4).fill(null).map(() => ({ id: crypto.randomUUID(), chords: [null] })) }
+      { id: 'p1', name: 'Pattern 1', sequence: Array(4).fill(null).map(() => ({ id: generateId(), chords: [null] })) }
   ]);
   const [activePatternIndex, setActivePatternIndex] = useState(0);
   const [sequencerHeldNotes, setSequencerHeldNotes] = useState<Set<string>>(new Set());
@@ -380,9 +383,9 @@ const App: React.FC = () => {
       setSongPatterns(prev => [
           ...prev,
           { 
-              id: crypto.randomUUID(), 
+              id: generateId(), 
               name: `Pattern ${prev.length + 1}`, 
-              sequence: Array(4).fill(null).map(() => ({ id: crypto.randomUUID(), chords: [null] })) 
+              sequence: Array(4).fill(null).map(() => ({ id: generateId(), chords: [null] })) 
           }
       ]);
       setActivePatternIndex(prev => prev + 1); // Switch to new pattern
@@ -514,7 +517,7 @@ const App: React.FC = () => {
       stopSong();
       setSequencerHeldNotes(new Set());
       // Reset to default 1-slot measures
-      handleSequenceChange(Array(4).fill(null).map(() => ({ id: crypto.randomUUID(), chords: [null] })));
+      handleSequenceChange(Array(4).fill(null).map(() => ({ id: generateId(), chords: [null] })));
   };
 
 

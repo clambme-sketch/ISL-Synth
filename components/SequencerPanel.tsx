@@ -55,7 +55,6 @@ const IconButton: React.FC<{
     </Tooltip>
 );
 
-
 export const SequencerPanel: React.FC<SequencerPanelProps> = ({
     bpm, onBpmChange, isMetronomePlaying, onToggleMetronome, metronomeTick,
     loopState, onRecord, onPlay, onClear, onDownload, loopProgress,
@@ -73,14 +72,14 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
   const handleBpmInputBlur = () => {
     let newBpm = parseInt(localBpm, 10);
     if (isNaN(newBpm)) {
-        newBpm = bpm; // Revert to original if invalid
+        newBpm = bpm;
     } else {
-        newBpm = Math.max(40, Math.min(240, newBpm)); // Clamp to valid range
+        newBpm = Math.max(40, Math.min(240, newBpm));
     }
     onBpmChange(newBpm);
   };
 
-  const totalCountInBeats = 8; // 2 measures * 4 beats
+  const totalCountInBeats = 8;
   let countInProgress = 0;
   if (loopState === 'countingIn' && countInMeasure > 0) {
       const beatsElapsedInPreviousMeasures = (countInMeasure - 1) * 4;
@@ -235,5 +234,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
               </div>
             </div>
         </div>
-    );
+    </div>
+  );
 };
