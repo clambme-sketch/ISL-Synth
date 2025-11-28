@@ -1,5 +1,5 @@
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import type { ArpeggiatorSettings } from '../types';
 import { NOTE_NAME_TO_CHROMATIC_INDEX } from '../services/musicTheory';
 
@@ -113,22 +113,8 @@ export const useArpeggiator = ({
 
     }, [heldNotes, settings.direction, settings.range, settings.latch]);
 
-    // Start/Stop Scheduler
-    useEffect(() => {
-        if (settings.on && audioContext) {
-            nextNoteTimeRef.current = Math.max(nextNoteTimeRef.current, audioContext.currentTime + 0.05);
-            scheduler();
-        } else {
-            if (timerRef.current) clearTimeout(timerRef.current);
-            latchedNotesRef.current.clear();
-        }
-        return () => {
-            if (timerRef.current) clearTimeout(timerRef.current);
-        };
-    }, [settings.on, audioContext]);
-
-
-    const scheduler = () => {
+    // Define scheduler with useCallback to make it a stable dependency
+    const scheduler = useCallback(() => {
         if (!audioContext || !settingsRef.current.on) return;
         
         const currentSettings = settingsRef.current;
@@ -171,5 +157,19 @@ export const useArpeggiator = ({
         }
 
         timerRef.current = window.setTimeout(scheduler, 25);
-    };
+    }, [audioContext, bpm, octaveOffset, onPlayNote]);
+
+    // Start/Stop Scheduler
+    useEffect(() => {
+        if (settings.on && audioContext) {
+            nextNoteTimeRef.current = Math.max(nextNoteTimeRef.current, audioContext.currentTime + 0.05);
+            scheduler();
+        } else {
+            if (timerRef.current) clearTimeout(timerRef.current);
+            latchedNotesRef.current.clear();
+        }
+        return () => {
+            if (timerRef.current) clearTimeout(timerRef.current);
+        };
+    }, [settings.on, audioContext, scheduler]);
 };

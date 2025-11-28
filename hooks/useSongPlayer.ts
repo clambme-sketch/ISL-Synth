@@ -168,13 +168,12 @@ export const useSongPlayer = ({ bpm, sequence, onPlayChord, onStopChord, audioCo
         });
     }, [cleanup, schedule]);
 
-    // Reset playback if sequence structure changes
+    // Reset playback if sequence structure changes or BPM changes
     useEffect(() => {
-        if (isPlaying) {
-            cleanup();
-            setIsPlaying(false);
-        }
-    }, [bpm, sequence.length]); // eslint-disable-line react-hooks/exhaustive-deps
+        // Safe reset without reading 'isPlaying' to avoid linter dependency issues
+        cleanup();
+        setIsPlaying(false);
+    }, [bpm, sequence, cleanup]); 
 
     // Cleanup on unmount
     useEffect(() => {
