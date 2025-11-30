@@ -3,15 +3,14 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Keyboard } from './components/Keyboard';
 import { Controls } from './components/Controls';
 import { AudioEngine } from './services/audioService';
-import type { ADSREnvelope, OscillatorSettings, SynthPreset, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, PresetCategory, ArpeggiatorSettings, SongMeasure, SongPattern } from './types';
+import type { ADSREnvelope, OscillatorSettings, SynthPreset, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, PresetCategory, ArpeggiatorSettings, SongMeasure, SongPattern, DrumPattern, ArrangementBlock } from './types';
 import { KEY_MAP, SYNTH_PRESETS, KEYBOARD_NOTES, DEFAULT_FILTER_SETTINGS, DEFAULT_REVERB_SETTINGS, DEFAULT_DELAY_SETTINGS, DEFAULT_SATURATION_SETTINGS, DEFAULT_CHORUS_SETTINGS, DEFAULT_PHASER_SETTINGS, DEFAULT_LFO_SETTINGS, DEFAULT_ARP_SETTINGS } from './constants';
 import { SidePanel } from './components/SidePanel';
-import { Visualizer } from './components/Visualizer';
 import { SequencerPanel } from './components/SequencerPanel';
 import { useMetronome } from './hooks/useMetronome';
 import { useLooper } from './hooks/useLooper';
 import { encodeWAV } from './services/wavEncoder';
-import { getChordNotes, getDiatonicChordNotesForKey, getDisplayKeys, formatNoteName } from './services/musicTheory';
+import { getChordNotes, getDiatonicChordNotesForKey, getDisplayKeys, formatNoteName, detectChordFromNotes } from './services/musicTheory';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ChordHelperPanel as ChordToolsPanel } from './components/ChordHelperPanel';
 import { EffectsPanel } from './components/EffectsPanel';
@@ -19,6 +18,7 @@ import { LFOPanel } from './components/LFOPanel';
 import { ArpeggiatorPanel } from './components/ArpeggiatorPanel';
 import { useArpeggiator } from './hooks/useArpeggiator';
 import { SongBuilderPanel } from './components/SongBuilderPanel';
+import { ArrangerPanel } from './components/ArrangerPanel';
 import { useSongPlayer } from './hooks/useSongPlayer';
 
 const PITCH_BEND_AMOUNT = 200;
@@ -101,6 +101,21 @@ const App: React.FC = () => {
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(1);
   const [sampleLoop, setSampleLoop] = useState(false);
+  const [sampleBpm, setSampleBpm] = useState<number>(120);
+  
+  // --- SEQUENCER & DRUM STATE ---
+  const [sequencerMode, setSequencerMode] = useState<'metronome' | 'drums'>('metronome');
+  const sequencerModeRef = useRef(sequencerMode); // Ref to access mode inside scheduler callback
+  useEffect(() => { sequencerModeRef.current = sequencerMode; }, [sequencerMode]);
+
+  const [drumPattern, setDrumPattern] = useState<DrumPattern>({
+      kick: Array(16).fill(false),
+      snare: Array(16).fill(false),
+      hihat: Array(16).fill(false)
+  });
+  // Ref for immediate access in audio scheduler
+  const drumPatternRef = useRef(drumPattern);
+  useEffect(() => { drumPatternRef.current = drumPattern; }, [drumPattern]);
   
   // --- MIDI STATE ---
   const [midiDeviceName, setMidiDeviceName] = useState<string | null>(null);
@@ -136,12 +151,14 @@ const App: React.FC = () => {
   // --- ARPEGGIATOR STATE ---
   const [arpSettings, setArpSettings] = useState<ArpeggiatorSettings>(DEFAULT_ARP_SETTINGS);
 
-  // --- SONG BUILDER STATE ---
-  // Initialize with 1 slot per measure
+  // --- SONG BUILDER & ARRANGER STATE ---
   const [songPatterns, setSongPatterns] = useState<SongPattern[]>([
       { id: 'p1', name: 'Pattern 1', sequence: Array(4).fill(null).map(() => ({ id: generateId(), chords: [null] })) }
   ]);
   const [activePatternIndex, setActivePatternIndex] = useState(0);
+  const [songArrangement, setSongArrangement] = useState<ArrangementBlock[]>([]);
+  const [arrangementPlaying, setArrangementPlaying] = useState(false);
+  
   const [sequencerHeldNotes, setSequencerHeldNotes] = useState<Set<string>>(new Set());
   // Separate metronome state for Song Builder
   const [songMetronomeOn, setSongMetronomeOn] = useState(false);
@@ -155,6 +172,29 @@ const App: React.FC = () => {
   const prevOctaveOffset = usePrevious(octaveOffset);
   const sustainOnRef = useRef(sustainOn); 
   useEffect(() => { sustainOnRef.current = sustainOn; }, [sustainOn]);
+
+  // Audio scheduler callback for drums
+  const handleSchedulerStep = useCallback((step: number, time: number) => {
+      // GUARD: Only play drums if we are in 'drums' mode
+      if (sequencerModeRef.current !== 'drums') return;
+
+      const pattern = drumPatternRef.current;
+      if (pattern.kick[step]) audioEngineRef.current?.playDrum('kick', time);
+      if (pattern.snare[step]) audioEngineRef.current?.playDrum('snare', time);
+      if (pattern.hihat[step]) audioEngineRef.current?.playDrum('hihat', time);
+  }, []);
+
+  const { isMetronomePlaying, bpm, setBpm, toggleMetronome, metronomeTick, beatInfo, currentStep } = useMetronome({
+    audioContext: audioEngineRef.current?.getAudioContext() ?? null,
+    onStep: handleSchedulerStep,
+    muteClick: sequencerMode === 'drums' // Mute metronome click when Drum Machine is active
+  });
+
+  // Calculate Warping Factor
+  const warpRatio = useMemo(() => {
+      if (sampleBpm <= 0) return 1;
+      return bpm / sampleBpm;
+  }, [bpm, sampleBpm]);
 
   // Create a ref to hold all synth settings. This avoids stale closures in callbacks.
   const synthSettingsRef = useRef({
@@ -170,7 +210,8 @@ const App: React.FC = () => {
     diatonicScale,
     activeCategory,
     sampleVolume,
-    arpSettings
+    arpSettings,
+    warpRatio
   });
 
   useEffect(() => {
@@ -187,13 +228,55 @@ const App: React.FC = () => {
       diatonicScale,
       activeCategory,
       sampleVolume,
-      arpSettings
+      arpSettings,
+      warpRatio
     };
   }); 
 
-  const { isMetronomePlaying, bpm, setBpm, toggleMetronome, metronomeTick, beatInfo } = useMetronome({
-    audioContext: audioEngineRef.current?.getAudioContext() ?? null,
-  });
+  // --- EFFECT SYNCHRONIZATION ---
+  // Sync effects to AudioEngine whenever they change
+  useEffect(() => { audioEngineRef.current?.updateFilter(filterSettings); }, [filterSettings]);
+  useEffect(() => { audioEngineRef.current?.updateReverb(reverbSettings); }, [reverbSettings]);
+  useEffect(() => { audioEngineRef.current?.updateDelay(delaySettings); }, [delaySettings]);
+  useEffect(() => { audioEngineRef.current?.updateSaturation(saturationSettings); }, [saturationSettings]);
+  useEffect(() => { audioEngineRef.current?.updateChorus(chorusSettings); }, [chorusSettings]);
+  useEffect(() => { audioEngineRef.current?.updatePhaser(phaserSettings); }, [phaserSettings]);
+  useEffect(() => { audioEngineRef.current?.updateLFO(lfoSettings); }, [lfoSettings]);
+  
+  useEffect(() => { audioEngineRef.current?.setPitchBend(pitchBend); }, [pitchBend]);
+  useEffect(() => { audioEngineRef.current?.setAdaptiveTuning(adaptiveTuning); }, [adaptiveTuning]);
+  useEffect(() => { audioEngineRef.current?.setMasterVolume(masterVolume); }, [masterVolume]);
+  useEffect(() => { audioEngineRef.current?.setSampleVolume(sampleVolume); }, [sampleVolume]);
+
+
+  // --- FREQUENCY MONITORING ---
+  // This effect polls the audio engine for the current frequency of active notes
+  // so the UI can display live Hz values (crucial for verifying Adaptive Tuning).
+  useEffect(() => {
+    if (keyboardDisplayMode !== 'hz') {
+        // If we are not in Hz mode, we don't need to poll.
+        // Clear frequencies to avoid stale state if we switch back later.
+        if (noteFrequencies.size > 0) setNoteFrequencies(new Map());
+        return;
+    }
+
+    let animationFrameId: number;
+    
+    const updateFrequencies = () => {
+        if (audioEngineRef.current) {
+            const freqs = audioEngineRef.current.getLiveFrequencies();
+            setNoteFrequencies(freqs);
+        }
+        animationFrameId = requestAnimationFrame(updateFrequencies);
+    };
+    
+    updateFrequencies();
+    
+    return () => {
+        cancelAnimationFrame(animationFrameId);
+    };
+  }, [keyboardDisplayMode, isInitialized]);
+
 
   // --- ARPEGGIATOR LOGIC ---
   const handleArpPlayNote = useCallback((note: string, time: number, duration: number) => {
@@ -208,7 +291,8 @@ const App: React.FC = () => {
           settings.oscMix, 
           time, 
           note, 
-          settings.activeCategory
+          settings.activeCategory,
+          settings.warpRatio
       );
 
       audioEngineRef.current.stopNote(note, settings.adsr.release, time + duration);
@@ -216,9 +300,28 @@ const App: React.FC = () => {
 
   // Combine all inputs for Arp: Pressed keys, MIDI, Sustained keys, Sequencer (Song Builder)
   const allHeldNotes = useMemo(() => {
-      // We explicitly add `sustainedNotes.keys()` here to include notes held by pedal
-      return new Set([...pressedNotes, ...midiPressedNotes, ...sustainedNotes.keys(), ...sequencerHeldNotes]);
-  }, [pressedNotes, midiPressedNotes, sustainedNotes, sequencerHeldNotes]);
+      const combined = new Set(sequencerHeldNotes); // Start with sequencer notes (already chords)
+
+      // Add sustained chords (already chords)
+      sustainedChords.forEach(data => data.notes.forEach(n => combined.add(n)));
+
+      const addNotes = (notes: Iterable<string>) => {
+          for (const note of notes) {
+              if (autoChordsOn) {
+                  const chordNotes = getChordNotes(note, chordMode, { key: musicKey, scale: diatonicScale });
+                  chordNotes.forEach(n => combined.add(n));
+              } else {
+                  combined.add(note);
+              }
+          }
+      };
+
+      addNotes(pressedNotes);
+      addNotes(midiPressedNotes);
+      addNotes(sustainedNotes.keys());
+
+      return combined;
+  }, [pressedNotes, midiPressedNotes, sustainedNotes, sustainedChords, sequencerHeldNotes, autoChordsOn, chordMode, musicKey, diatonicScale]);
 
   useArpeggiator({
       bpm,
@@ -230,7 +333,8 @@ const App: React.FC = () => {
   });
 
   const looperNoteOn = useCallback((note: string, time?: number) => {
-    audioEngineRef.current?.playNote(note, synthSettingsRef.current.adsr, synthSettingsRef.current.osc1, synthSettingsRef.current.osc2, synthSettingsRef.current.oscMix, time, undefined, synthSettingsRef.current.activeCategory);
+    const settings = synthSettingsRef.current;
+    audioEngineRef.current?.playNote(note, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, time, undefined, settings.activeCategory, settings.warpRatio);
   }, []);
 
   const looperNoteOff = useCallback((note: string, time?: number) => {
@@ -247,6 +351,7 @@ const App: React.FC = () => {
     noteOn: looperRecordNoteOn,
     noteOff: looperRecordNoteOff,
     countInMeasure,
+    playbackStartTime,
   } = useLooper({
     bpm,
     bars: loopBars,
@@ -257,6 +362,12 @@ const App: React.FC = () => {
     onStopNote: looperNoteOff,
     onStopAllLoopNotes: () => audioEngineRef.current?.stopAllNotes(),
   });
+  
+  const handleToggleMetronome = () => {
+    // If we have a loop playing, sync the metronome to it
+    const syncTime = (loopState === 'playing' || loopState === 'overdubbing') ? playbackStartTime : undefined;
+    toggleMetronome(syncTime);
+  };
   
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -281,11 +392,11 @@ const App: React.FC = () => {
         activeChordsRef.current.set(note, chordNotes);
         setActiveChords(prev => new Map(prev).set(note, chordNotes));
         chordNotes.forEach(chordNote => {
-            audioEngineRef.current?.playNote(chordNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, finalRootNote, settings.activeCategory);
+            audioEngineRef.current?.playNote(chordNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, finalRootNote, settings.activeCategory, settings.warpRatio);
             looperRecordNoteOn(chordNote);
         });
     } else {
-        audioEngineRef.current.playNote(finalRootNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
+        audioEngineRef.current.playNote(finalRootNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio);
         looperRecordNoteOn(finalRootNote);
     }
     
@@ -375,6 +486,73 @@ const App: React.FC = () => {
     }
   }, [sustainOn, pressedNotes, adsr.release, looperRecordNoteOff]);
 
+  const noteHandlersRef = useRef({ handleNoteDown, handleNoteUp, setSustainOn });
+  useEffect(() => {
+      noteHandlersRef.current = { handleNoteDown, handleNoteUp, setSustainOn };
+  }, [handleNoteDown, handleNoteUp, setSustainOn]);
+
+  const handleConnectMidi = useCallback(async () => {
+    if (!(navigator as any).requestMIDIAccess) {
+      setMidiDeviceName("Not Supported");
+      return;
+    }
+
+    setMidiDeviceName("Connecting...");
+
+    try {
+      const midiAccess = await (navigator as any).requestMIDIAccess();
+      
+      const onMidiMessage = (event: any) => {
+        const [status, data1, data2] = event.data;
+        const command = status & 0xF0;
+        const note = data1;
+        const velocity = data2;
+
+        if (command === 0x90 && velocity > 0) {
+            const noteName = midiToNoteName(note);
+            setMidiPressedNotes(prev => new Set(prev).add(noteName));
+            noteHandlersRef.current.handleNoteDown(noteName);
+        }
+        else if (command === 0x80 || (command === 0x90 && velocity === 0)) {
+            const noteName = midiToNoteName(note);
+            setMidiPressedNotes(prev => {
+                const next = new Set(prev);
+                next.delete(noteName);
+                return next;
+            });
+            noteHandlersRef.current.handleNoteUp(noteName);
+        }
+        else if (command === 0xB0 && note === 64) {
+             const isPedalDown = velocity >= 64;
+             noteHandlersRef.current.setSustainOn(isPedalDown);
+        }
+      };
+
+      const inputs = midiAccess.inputs.values();
+      let deviceFound = false;
+      let name = "No Devices Found";
+      
+      for (let input of inputs) {
+          input.onmidimessage = onMidiMessage;
+          name = input.name || "MIDI Device";
+          deviceFound = true;
+      }
+      
+      setMidiDeviceName(name);
+      
+      midiAccess.onstatechange = (e: any) => {
+           if (e.port.type === 'input' && e.port.state === 'connected' && !deviceFound) {
+                e.port.onmidimessage = onMidiMessage;
+                setMidiDeviceName(e.port.name);
+                deviceFound = true;
+           }
+      };
+
+    } catch (err) {
+      console.error("MIDI Access Failed", err);
+      setMidiDeviceName("Access Denied");
+    }
+  }, []);
 
   // --- SONG BUILDER LOGIC ---
 
@@ -411,6 +589,84 @@ const App: React.FC = () => {
       });
   };
 
+  const handleSongClear = () => {
+      setSongPatterns(prev => {
+          const newPatterns = [...prev];
+          newPatterns[activePatternIndex] = {
+              ...newPatterns[activePatternIndex],
+              sequence: Array(4).fill(null).map(() => ({ id: generateId(), chords: [null] }))
+          };
+          return newPatterns;
+      });
+  };
+  
+  // Convert recorded loop to a song pattern
+  const handleLoopToPattern = () => {
+    if (loop.length === 0) return;
+
+    // Determine loop duration and measure length
+    const beatsPerBar = 4;
+    const secondsPerBeat = 60 / bpm;
+    const measureDuration = secondsPerBeat * beatsPerBar;
+    
+    // Create new measures
+    const newSequence: SongMeasure[] = [];
+    
+    for (let i = 0; i < loopBars; i++) {
+        const measureStart = i * measureDuration;
+        const measureEnd = (i + 1) * measureDuration;
+        const halfMeasure = measureDuration / 2;
+        
+        // Analyze notes for Beat 1
+        // We look for notes that start around beat 1 or are sustaining through it
+        // Simpler approach: notes playing at (measureStart + 0.1s)
+        const notesAtBeat1 = new Set<string>();
+        const notesAtBeat3 = new Set<string>();
+        
+        const checkTime1 = measureStart + 0.1; // slightly into the beat
+        const checkTime3 = measureStart + halfMeasure + 0.1;
+        
+        loop.forEach(event => {
+            const eventEnd = event.startTime + event.duration;
+            
+            // Check Beat 1
+            if (event.startTime <= checkTime1 && eventEnd >= checkTime1) {
+                notesAtBeat1.add(event.note);
+            }
+            
+            // Check Beat 3
+            if (event.startTime <= checkTime3 && eventEnd >= checkTime3) {
+                notesAtBeat3.add(event.note);
+            }
+        });
+        
+        const chord1 = detectChordFromNotes(Array.from(notesAtBeat1));
+        const chord2 = detectChordFromNotes(Array.from(notesAtBeat3));
+        
+        // If chord2 is same as chord1, we can just use chord1 for the whole measure (or explicitly list both)
+        // SongBuilder UI supports [chord1, chord2] or [chord1]
+        // Let's use two slots for detail if they differ
+        const chords = (chord1 !== chord2 && chord2) ? [chord1, chord2] : [chord1];
+
+        newSequence.push({
+            id: generateId(),
+            chords: chords
+        });
+    }
+    
+    // Add new pattern
+    setSongPatterns(prev => [
+        ...prev,
+        {
+            id: generateId(),
+            name: `Rec Loop ${prev.length + 1}`,
+            sequence: newSequence
+        }
+    ]);
+    // Switch to new pattern
+    setActivePatternIndex(songPatterns.length);
+  };
+
   const handleSongPlayStep = useCallback((chordName: string) => {
       const settings = synthSettingsRef.current;
       
@@ -429,7 +685,9 @@ const App: React.FC = () => {
               else if (suffix === '7') mode = 'dominant7';
               else if (suffix === '°' || suffix === 'dim') mode = 'diminished';
               else if (suffix === '+' || suffix === 'aug') mode = 'augmented';
-              
+              else if (suffix === 'sus4') mode = 'major'; // fallback or add sus4 mode later
+              else if (suffix === 'sus2') mode = 'major';
+
               // Default to Octave 4
               const rootNote = `${root}4`;
               
@@ -440,7 +698,7 @@ const App: React.FC = () => {
               
               if (!settings.arpSettings.on) {
                   notes.forEach(n => {
-                      audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
+                      audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio);
                   });
               }
           }
@@ -483,7 +741,7 @@ const App: React.FC = () => {
           
           if (!settings.arpSettings.on) {
               notes.forEach(n => {
-                  audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
+                  audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio);
               });
           }
       }
@@ -504,21 +762,100 @@ const App: React.FC = () => {
       });
   }, []);
 
-  const { isPlaying: isSongPlaying, togglePlay: toggleSongPlay, currentMeasureIndex, stop: stopSong } = useSongPlayer({
+  // --- ARRANGER PLAYBACK LOGIC ---
+  const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingArrangement = isPlaying && arrangementPlaying;
+  const isPlayingPattern = isPlaying && !arrangementPlaying;
+
+  const currentSequence = useMemo(() => {
+      if (arrangementPlaying && songArrangement.length > 0) {
+          // Flatten the arrangement: Look up pattern by ID and concat their sequences
+          return songArrangement.flatMap(block => {
+              const pattern = songPatterns.find(p => p.id === block.patternId);
+              return pattern ? pattern.sequence : [];
+          });
+      }
+      // Default to current pattern
+      return songPatterns[activePatternIndex].sequence;
+  }, [arrangementPlaying, songArrangement, songPatterns, activePatternIndex]);
+
+  // We check which index in the FULL arrangement corresponds to the start of the current block
+  // to highlight the correct block in the Arranger panel
+  const currentBlockIndex = useMemo(() => {
+      if (!arrangementPlaying) return -1;
+      
+      let measureCount = 0;
+      // Note: currentMeasureIndex comes from useSongPlayer below
+      // We need to find which block encompasses this measure index
+      // We'll calculate this inside the render or effect, but here we don't have currentMeasureIndex yet.
+      return -1; // Placeholder, calculated later
+  }, [arrangementPlaying]);
+
+
+  const { isPlaying: isPlayerActive, togglePlay: toggleSongPlay, currentMeasureIndex, stop: stopSong } = useSongPlayer({
       bpm,
-      sequence: songPatterns[activePatternIndex].sequence,
+      sequence: currentSequence,
       onPlayChord: handleSongPlayStep,
       onStopChord: handleSongStopStep,
       audioContext: audioEngineRef.current?.getAudioContext() ?? null,
       isMetronomeEnabled: songMetronomeOn
   });
-  
-  const handleSongClear = () => {
-      stopSong();
-      setSequencerHeldNotes(new Set());
-      // Reset to default 1-slot measures
-      handleSequenceChange(Array(4).fill(null).map(() => ({ id: generateId(), chords: [null] })));
+
+  // Sync local playing state with the hook
+  useEffect(() => {
+      setIsPlaying(isPlayerActive);
+      if (!isPlayerActive) {
+          // Reset arrangement playing state when stop is triggered naturally
+          // setArrangementPlaying(false); // Optional: keep it set if we want resume behavior? No, stop is stop.
+      }
+  }, [isPlayerActive]);
+
+  const handlePatternPlayPause = () => {
+      if (arrangementPlaying) {
+          stopSong();
+          setArrangementPlaying(false);
+          // Small delay to ensure clean stop before starting pattern
+          setTimeout(toggleSongPlay, 50); 
+      } else {
+          toggleSongPlay();
+      }
   };
+
+  const handleArrangementPlayPause = () => {
+      if (isPlayingPattern) {
+          stopSong();
+          // Small delay to switch modes
+          setTimeout(() => {
+              setArrangementPlaying(true);
+              toggleSongPlay();
+          }, 50);
+      } else {
+          if (!isPlayerActive) setArrangementPlaying(true);
+          toggleSongPlay();
+      }
+  };
+  
+  const handleArrangementStop = () => {
+      stopSong();
+      setArrangementPlaying(false);
+  };
+
+  // Calculate Active Block Index for Arranger UI
+  const activeArrangementBlockIndex = useMemo(() => {
+      if (!arrangementPlaying || currentMeasureIndex === -1) return -1;
+      
+      let measureAccumulator = 0;
+      for (let i = 0; i < songArrangement.length; i++) {
+          const pattern = songPatterns.find(p => p.id === songArrangement[i].patternId);
+          const patternLength = pattern?.sequence.length || 0;
+          
+          if (currentMeasureIndex >= measureAccumulator && currentMeasureIndex < measureAccumulator + patternLength) {
+              return i;
+          }
+          measureAccumulator += patternLength;
+      }
+      return -1;
+  }, [arrangementPlaying, currentMeasureIndex, songArrangement, songPatterns]);
 
 
   const highlightedNotes = useMemo(() => {
@@ -574,157 +911,19 @@ const App: React.FC = () => {
         audioEngineRef.current = new AudioEngine();
         audioEngineRef.current.setSampleVolume(sampleVolume);
         audioEngineRef.current.setMasterVolume(masterVolume);
+        audioEngineRef.current.setAdaptiveTuning(adaptiveTuning);
+        // Force initialization of effects with current state
+        audioEngineRef.current.updateFilter(filterSettings);
+        audioEngineRef.current.updateReverb(reverbSettings);
+        audioEngineRef.current.updateDelay(delaySettings);
+        audioEngineRef.current.updateSaturation(saturationSettings);
+        audioEngineRef.current.updateChorus(chorusSettings);
+        audioEngineRef.current.updatePhaser(phaserSettings);
+        audioEngineRef.current.updateLFO(lfoSettings);
     }
     setIsInitialized(true);
   };
   
-  const handleMidiConnect = useCallback(() => {
-    if (!navigator.requestMIDIAccess) {
-      setMidiDeviceName('Not Supported');
-      return;
-    }
-    setMidiDeviceName('Connecting...');
-
-    const onMIDIMessage = (event: MIDIMessageEvent) => {
-        if (!audioEngineRef.current) return;
-        
-        const settings = synthSettingsRef.current;
-        const [status, data1, data2] = event.data;
-        const command = status >> 4;
-        const noteNumber = data1;
-        const velocity = data2;
-
-        switch (command) {
-            case 9: // Note On
-                if (velocity > 0) {
-                    const note = midiToNoteName(noteNumber);
-                    
-                    // Update MIDI State state
-                    setMidiPressedNotes(prev => new Set(prev).add(note));
-                    setMidiSustainedNotes(prev => {
-                        const newSet = new Set(prev);
-                        newSet.delete(note);
-                        return newSet;
-                    });
-
-                    // Play Logic
-                    if (!settings.arpSettings.on) {
-                        audioEngineRef.current.playNote(note, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory);
-                        looperRecordNoteOn(note);
-                    }
-
-                } else { // Note On with velocity 0 is a Note Off
-                    const note = midiToNoteName(noteNumber);
-                    
-                    setMidiPressedNotes(prev => {
-                        const newSet = new Set(prev);
-                        newSet.delete(note);
-                        return newSet;
-                    });
-
-                    if (!settings.arpSettings.on) {
-                        looperRecordNoteOff(note);
-                        if (sustainOnRef.current) {
-                            setMidiSustainedNotes(prev => new Set(prev).add(note));
-                        } else {
-                            audioEngineRef.current.stopNote(note, settings.adsr.release);
-                        }
-                    }
-                }
-                break;
-            case 8: // Note Off
-                const note = midiToNoteName(noteNumber);
-                
-                setMidiPressedNotes(prev => {
-                    const newSet = new Set(prev);
-                    newSet.delete(note);
-                    return newSet;
-                });
-
-                if (!settings.arpSettings.on) {
-                    looperRecordNoteOff(note);
-                    if (sustainOnRef.current) {
-                        setMidiSustainedNotes(prev => new Set(prev).add(note));
-                    } else {
-                        audioEngineRef.current.stopNote(note, settings.adsr.release);
-                    }
-                }
-                break;
-            case 11: // Control Change
-                if (data1 === 64) setSustainOn(data2 >= 64);
-                break;
-            case 14: // Pitch Bend
-                const bendValue = ((data2 << 7) | data1) - 8192;
-                setPitchBend((bendValue / 8192) * PITCH_BEND_AMOUNT);
-                break;
-        }
-    };
-    
-    const onMIDISuccess = (midiAccess: MIDIAccess) => {
-      const inputs = Array.from(midiAccess.inputs.values());
-      if (inputs.length > 0) {
-        setMidiDeviceName(inputs[0].name || 'Unknown Device');
-        inputs.forEach(input => input.onmidimessage = onMIDIMessage);
-      } else {
-        setMidiDeviceName('No Devices Found');
-      }
-
-      midiAccess.onstatechange = (event: MIDIConnectionEvent) => {
-        if (event.port.type === 'input') onMIDISuccess(midiAccess);
-      };
-    };
-
-    navigator.requestMIDIAccess({ sysex: false }).then(onMIDISuccess, () => setMidiDeviceName('Access Denied'));
-  
-  }, [isInitialized, looperRecordNoteOn, looperRecordNoteOff]);
-
-  useEffect(() => {
-    audioEngineRef.current?.setPitchBend(pitchBend);
-  }, [pitchBend]);
-
-  useEffect(() => {
-    audioEngineRef.current?.setAdaptiveTuning(adaptiveTuning);
-  }, [adaptiveTuning, isInitialized]);
-  
-  useEffect(() => {
-    if(audioEngineRef.current) {
-        audioEngineRef.current.setMasterVolume(masterVolume);
-    }
-  }, [masterVolume, isInitialized]);
-
-  // --- EFFECTS HOOKS ---
-  useEffect(() => { audioEngineRef.current?.updateFilter(filterSettings); }, [filterSettings, isInitialized]);
-  useEffect(() => { audioEngineRef.current?.updateDelay(delaySettings); }, [delaySettings, isInitialized]);
-  useEffect(() => { audioEngineRef.current?.updateReverb(reverbSettings); }, [reverbSettings, isInitialized]);
-  useEffect(() => { audioEngineRef.current?.updateSaturation(saturationSettings); }, [saturationSettings, isInitialized]);
-  useEffect(() => { audioEngineRef.current?.updateChorus(chorusSettings); }, [chorusSettings, isInitialized]);
-  useEffect(() => { audioEngineRef.current?.updatePhaser(phaserSettings); }, [phaserSettings, isInitialized]);
-  useEffect(() => { audioEngineRef.current?.updateLFO(lfoSettings); }, [lfoSettings, isInitialized]);
-
-  // Real-time frequency polling for Hz display mode
-  useEffect(() => {
-    if (!isInitialized || !audioEngineRef.current || keyboardDisplayMode !== 'hz') {
-        if (noteFrequencies.size > 0) setNoteFrequencies(new Map()); // Clear if not needed
-        return;
-    };
-
-    let animationFrameId: number;
-    const audioEngine = audioEngineRef.current;
-
-    const updateFrequencies = () => {
-        const liveFrequencies = audioEngine.getLiveFrequencies();
-        setNoteFrequencies(new Map(liveFrequencies)); // Create new map to ensure re-render
-        animationFrameId = requestAnimationFrame(updateFrequencies);
-    };
-
-    animationFrameId = requestAnimationFrame(updateFrequencies);
-
-    return () => {
-        cancelAnimationFrame(animationFrameId);
-    };
-  }, [isInitialized, keyboardDisplayMode, noteFrequencies.size]);
-  
-  // --- SAMPLE HANDLING ---
   const handleSampleLoad = useCallback(async (arrayBuffer: ArrayBuffer) => {
       if (!audioEngineRef.current) return;
       try {
@@ -732,10 +931,12 @@ const App: React.FC = () => {
           const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
           await audioEngineRef.current.setSample(decodedBuffer);
           setSampleBuffer(decodedBuffer);
+          // Set sample BPM to current BPM by default when loading a new sample
+          setSampleBpm(bpm); 
       } catch (error) {
           console.error("Error decoding audio sample:", error);
       }
-  }, []);
+  }, [bpm]); // Depend on BPM to capture current tempo on load
   
   const handleTrimChange = (start: number, end: number) => {
       setTrimStart(start);
@@ -887,21 +1088,21 @@ const App: React.FC = () => {
   };
   
   const currentTheme = THEMES[activeCategory];
-  const styleProps = {
+  const styleProps = useMemo(() => ({
       '--accent-500': currentTheme.primary,
       '--secondary-500': currentTheme.secondary,
       '--accent-400': currentTheme.primary, // Simplified for now
-  } as React.CSSProperties;
+  } as React.CSSProperties), [currentTheme]);
 
   if (!isInitialized) {
     return (
         <div className="flex items-center justify-center min-h-screen bg-synth-gray-900" style={styleProps}>
-            <div className="text-center p-8 bg-synth-gray-800 rounded-lg shadow-xl">
-                <h1 className="text-3xl font-bold text-white mb-2">ISL Synth</h1>
+            <div className="text-center p-8 bg-synth-gray-800 rounded-lg shadow-xl border border-[rgb(var(--accent-500))]">
+                <h1 className="text-3xl font-bold text-white mb-2 tracking-widest uppercase">ISL Synth</h1>
                 <p className="text-lg text-synth-gray-500 mb-8">by Clark Lambert</p>
                 <button 
                     onClick={handleInit} 
-                    className="px-6 py-3 bg-synth-purple-500 text-white font-bold rounded-lg hover:bg-synth-purple-400 transition-colors focus:outline-none focus:ring-2 focus:ring-synth-cyan-500"
+                    className="px-6 py-3 bg-[rgb(var(--secondary-500))] text-white font-bold rounded-lg hover:opacity-80 transition-opacity focus:outline-none shadow-lg shadow-[rgba(var(--secondary-500),0.3)]"
                 >
                     Start Synthesizer
                 </button>
@@ -915,9 +1116,9 @@ const App: React.FC = () => {
         className="relative min-h-screen bg-synth-gray-800 flex flex-col items-center justify-center p-4 font-sans antialiased transition-colors duration-500"
         style={styleProps}
     >
-      <div className="w-full max-w-6xl mx-auto bg-synth-gray-900 shadow-2xl rounded-xl p-4 sm:p-6 lg:p-8 flex flex-col gap-8 transition-colors duration-500">
+      <div className="w-full max-w-6xl mx-auto bg-synth-gray-900 shadow-2xl rounded-xl p-4 sm:p-6 lg:p-8 flex flex-col gap-8 transition-colors duration-500 border border-synth-gray-700/50">
         <header className="flex justify-center items-center">
-            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-wider">
+            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[rgb(var(--accent-500))] to-[rgb(var(--secondary-500))] tracking-widest uppercase filter drop-shadow-[0_0_2px_rgba(var(--accent-500),0.5)]">
                 ISL Synth
             </h1>
         </header>
@@ -943,6 +1144,8 @@ const App: React.FC = () => {
             onSampleVolumeChange={handleSampleVolumeChange}
             sampleLoop={sampleLoop}
             onSampleLoopChange={handleSampleLoopChange}
+            sampleBpm={sampleBpm}
+            onSampleBpmChange={setSampleBpm}
           />
           <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1">
@@ -985,14 +1188,13 @@ const App: React.FC = () => {
             preferFlats={preferFlats}
             noteFrequencies={noteFrequencies}
           />
-          <Visualizer analyserX={audioEngineRef.current?.analyserX ?? null} />
           
            <div className="mt-4">
                <SequencerPanel
                     bpm={bpm}
                     onBpmChange={setBpm}
                     isMetronomePlaying={isMetronomePlaying}
-                    onToggleMetronome={toggleMetronome}
+                    onToggleMetronome={handleToggleMetronome}
                     metronomeTick={metronomeTick}
                     loopState={loopState}
                     onRecord={startRecording}
@@ -1009,6 +1211,12 @@ const App: React.FC = () => {
                     isLooping={loopState !== 'idle'}
                     loopBuffer={loopBuffer}
                     showTooltips={showTooltips}
+                    drumPattern={drumPattern}
+                    onDrumPatternChange={setDrumPattern}
+                    currentStep={currentStep}
+                    mode={sequencerMode}
+                    onModeChange={setSequencerMode}
+                    onAddToPatterns={handleLoopToPattern}
                 />
            </div>
            
@@ -1055,8 +1263,8 @@ const App: React.FC = () => {
                 onPatternAdd={handlePatternAdd}
                 onPatternDelete={handlePatternDelete}
                 onSequenceChange={handleSequenceChange}
-                isPlaying={isSongPlaying}
-                onPlayPause={toggleSongPlay}
+                isPlaying={isPlayingPattern}
+                onPlayPause={handlePatternPlayPause}
                 onClear={handleSongClear}
                 currentMeasureIndex={currentMeasureIndex}
                 musicKey={musicKey}
@@ -1067,6 +1275,19 @@ const App: React.FC = () => {
                 displayKeys={displayKeys}
                 isMetronomePlaying={songMetronomeOn}
                 onToggleMetronome={() => setSongMetronomeOn(prev => !prev)}
+              />
+          </div>
+
+          <div className="mt-4">
+              <ArrangerPanel 
+                  patterns={songPatterns}
+                  arrangement={songArrangement}
+                  onArrangementChange={setSongArrangement}
+                  isPlaying={isPlayingArrangement}
+                  onPlayPause={handleArrangementPlayPause}
+                  onStop={handleArrangementStop}
+                  currentBlockIndex={activeArrangementBlockIndex}
+                  showTooltips={showTooltips}
               />
           </div>
 
@@ -1082,7 +1303,7 @@ const App: React.FC = () => {
                 onPreferFlatsChange={setPreferFlats}
                 displayKeys={displayKeys}
                 midiDeviceName={midiDeviceName}
-                onConnectMidi={handleMidiConnect}
+                onConnectMidi={handleConnectMidi}
                 showTooltips={showTooltips}
                 onShowTooltipsChange={setShowTooltips}
             />

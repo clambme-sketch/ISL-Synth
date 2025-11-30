@@ -1,7 +1,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import type { ArpeggiatorSettings } from '../types';
-import { NOTE_NAME_TO_CHROMATIC_INDEX } from '../services/musicTheory';
+import { NOTE_NAME_TO_CHROMATIC_INDEX, normalizeNoteName } from '../services/musicTheory';
 
 interface UseArpeggiatorProps {
     bpm: number;
@@ -12,12 +12,21 @@ interface UseArpeggiatorProps {
     octaveOffset: number;
 }
 
-// Helper to parse note name to MIDI for sorting
+// Robust helper to parse note name to MIDI for sorting
 const getMidiValue = (note: string): number => {
-    const match = note.match(/([A-G]#?)(-?\d+)/);
+    // 1. Normalize note to ensure Sharps (e.g. Bb -> A#)
+    const normalized = normalizeNoteName(note);
+    
+    // 2. Parse Normalized Note
+    const match = normalized.match(/([A-G]#?)(-?\d+)/);
     if (!match) return 0;
-    const chroma = NOTE_NAME_TO_CHROMATIC_INDEX[match[1]];
+    
+    const noteName = match[1];
     const octave = parseInt(match[2], 10);
+    
+    const chroma = NOTE_NAME_TO_CHROMATIC_INDEX[noteName];
+    if (chroma === undefined) return 0;
+
     return (octave + 1) * 12 + chroma;
 };
 
@@ -25,7 +34,9 @@ const getNoteFromMidi = (midi: number): string => {
     const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     const octave = Math.floor(midi / 12) - 1;
     const chroma = midi % 12;
-    return `${notes[chroma]}${octave}`;
+    // Handle negative chromas wrapping correctly if that ever happens
+    const safeChroma = (chroma + 12) % 12; 
+    return `${notes[safeChroma]}${octave}`;
 };
 
 
@@ -140,6 +151,7 @@ export const useArpeggiator = ({
                     noteToPlay = pattern[stepIndexRef.current % pattern.length];
                 }
                 
+                // Transpose based on current keyboard octave shift
                 const midi = getMidiValue(noteToPlay);
                 const transposedNote = getNoteFromMidi(midi + (octaveOffset * 12));
 
@@ -160,6 +172,7 @@ export const useArpeggiator = ({
     // Start/Stop Scheduler
     useEffect(() => {
         if (settings.on && audioContext) {
+            // Ensure we don't schedule in the past if restarting
             nextNoteTimeRef.current = Math.max(nextNoteTimeRef.current, audioContext.currentTime + 0.05);
             scheduler();
         } else {

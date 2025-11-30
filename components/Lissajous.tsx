@@ -3,19 +3,48 @@ import React, { useRef, useEffect } from 'react';
 interface LissajousProps {
   analyserX: AnalyserNode | null;
   analyserY: AnalyserNode | null;
-  colorX: string;
-  colorY: string;
+  colorX?: string; // Optional, defaults to theme
+  colorY?: string; // Optional, defaults to theme
 }
 
 const CANVAS_WIDTH = 512;
 const CANVAS_HEIGHT = 512;
 const FADE_AMOUNT = 0.15;
-const LINE_WIDTH = 1; // Thinner core line for better definition
-const GLOW_BLUR = 15; // Increased blur for a softer glow
-
+const LINE_WIDTH = 1; 
+const GLOW_BLUR = 15; 
 
 export const Lissajous: React.FC<LissajousProps> = ({ analyserX, analyserY, colorX, colorY }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const colorsRef = useRef({ x: '#00FFFF', y: '#8A2BE2' });
+
+  // Update theme colors when props or theme changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const computedStyle = getComputedStyle(canvas);
+    const accentRaw = computedStyle.getPropertyValue('--accent-500').trim();
+    const secondaryRaw = computedStyle.getPropertyValue('--secondary-500').trim();
+
+    // Helper to resolve CSS variables if they are passed in the prop string
+    const resolveColor = (val?: string) => {
+      if (!val) return undefined;
+      if (val.includes('var(')) {
+           const varNameMatch = val.match(/--[\w-]+/);
+           if (varNameMatch) {
+               const resolved = computedStyle.getPropertyValue(varNameMatch[0]).trim();
+               if (resolved) return `rgb(${resolved})`;
+           }
+      }
+      return val;
+    };
+
+    const cX = resolveColor(colorX) || (accentRaw ? `rgb(${accentRaw})` : '#00FFFF');
+    const cY = resolveColor(colorY) || (secondaryRaw ? `rgb(${secondaryRaw})` : '#8A2BE2');
+    
+    colorsRef.current = { x: cX, y: cY };
+
+  }, [colorX, colorY]); // Also runs on mount/updates
 
   useEffect(() => {
     if (!analyserX || !analyserY) return;
@@ -39,11 +68,11 @@ export const Lissajous: React.FC<LissajousProps> = ({ analyserX, analyserY, colo
       analyserX.getFloatTimeDomainData(dataArrayX);
       analyserY.getFloatTimeDomainData(dataArrayY);
 
-      // Apply the fade effect to create trails
       context.fillStyle = `rgba(0, 0, 0, ${FADE_AMOUNT})`;
       context.fillRect(0, 0, canvas.width, canvas.height);
       
-      // Define the path for the waveform
+      const { x: cX, y: cY } = colorsRef.current;
+
       context.beginPath();
       const firstX = (dataArrayX[0] * canvas.width / 2) + (canvas.width / 2);
       const firstY = (dataArrayY[0] * canvas.height / 2) + (canvas.height / 2);
@@ -55,20 +84,19 @@ export const Lissajous: React.FC<LissajousProps> = ({ analyserX, analyserY, colo
         context.lineTo(x, y);
       }
 
-      // 1. Draw the outer glow (Y color) first
-      context.lineWidth = LINE_WIDTH * 4; // Thicker for the glow
-      context.strokeStyle = colorY;
+      // Draw the outer glow (using Secondary/Y color)
+      context.lineWidth = LINE_WIDTH * 4;
+      context.strokeStyle = cY;
       context.shadowBlur = GLOW_BLUR;
-      context.shadowColor = colorY;
+      context.shadowColor = cY;
       context.stroke();
 
-      // 2. Draw the core line (X color) on top
+      // Draw the core line (using Primary/X color)
       context.lineWidth = LINE_WIDTH;
-      context.strokeStyle = colorX;
-      context.shadowBlur = 0; // No shadow for the core line
+      context.strokeStyle = cX;
+      context.shadowBlur = 0; 
       context.stroke();
       
-      // Reset shadow for next frame's fade rectangle
       context.shadowBlur = 0;
     };
 
@@ -77,7 +105,7 @@ export const Lissajous: React.FC<LissajousProps> = ({ analyserX, analyserY, colo
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [analyserX, analyserY, colorX, colorY]);
+  }, [analyserX, analyserY]);
 
   return (
     <canvas ref={canvasRef} className="w-full h-full block"></canvas>

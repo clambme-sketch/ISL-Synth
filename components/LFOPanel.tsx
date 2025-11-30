@@ -65,6 +65,9 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
   const rateMin = isKeySync ? 0.5 : 0.1;
   const rateMax = isKeySync ? 10.0 : 200;
   
+  const defaultRate = isKeySync ? 1.0 : 5.0;
+  const defaultDepth = 0.2;
+  
   // Adjust tooltip for AM vs FM
   let rateTooltip = "";
   let depthTooltip = "";
@@ -181,6 +184,7 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                         <SliderControl 
                             label={rateLabel} 
                             value={settings.rate} 
+                            defaultValue={defaultRate}
                             min={rateMin} 
                             max={rateMax} 
                             step={0.1} 
@@ -191,6 +195,7 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                         <SliderControl 
                             label="Depth" 
                             value={settings.depth} 
+                            defaultValue={defaultDepth}
                             min={0} 
                             max={1} 
                             step={0.01} 
@@ -202,6 +207,5 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                 </div>
             </div>
         </div>
-    </div>
-  );
+    );
 };

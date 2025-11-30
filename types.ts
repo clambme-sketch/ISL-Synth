@@ -136,3 +136,17 @@ export interface SongPattern {
     name: string;
     sequence: SongMeasure[];
 }
+
+export interface ArrangementBlock {
+    id: string; // Unique instance ID in timeline
+    patternId: string;
+}
+
+// --- DRUM MACHINE ---
+export type DrumType = 'kick' | 'snare' | 'hihat';
+
+export interface DrumPattern {
+    kick: boolean[];
+    snare: boolean[];
+    hihat: boolean[];
+}

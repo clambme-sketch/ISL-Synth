@@ -10,6 +10,17 @@ const CANVAS_HEIGHT = 100;
 
 export const Oscilloscope: React.FC<OscilloscopeProps> = ({ analyser }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const accentColorRef = useRef<string>('#00FFFF');
+
+  // Update theme colors when component mounts or updates
+  useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const computedStyle = getComputedStyle(canvas);
+      const accent = computedStyle.getPropertyValue('--accent-500').trim();
+      accentColorRef.current = accent ? `rgb(${accent})` : '#00FFFF';
+  });
 
   useEffect(() => {
     if (!analyser) return;
@@ -40,7 +51,8 @@ export const Oscilloscope: React.FC<OscilloscopeProps> = ({ analyser }) => {
 
       // Set the style for the waveform line
       context.lineWidth = 2;
-      context.strokeStyle = '#00FFFF'; // synth-cyan-500
+      context.strokeStyle = accentColorRef.current;
+
       context.beginPath();
 
       const sliceWidth = canvas.width * 1.0 / bufferLength;
@@ -50,7 +62,6 @@ export const Oscilloscope: React.FC<OscilloscopeProps> = ({ analyser }) => {
         // Waveform values are from -1.0 to 1.0.
         const v = dataArray[i];
         // Map this value to a y-coordinate on the canvas.
-        // Center of canvas is height / 2.
         const y = (v * canvas.height / 2) + (canvas.height / 2);
 
         if (i === 0) {
@@ -65,7 +76,6 @@ export const Oscilloscope: React.FC<OscilloscopeProps> = ({ analyser }) => {
 
     draw();
 
-    // Cleanup function to cancel the animation frame when the component unmounts
     return () => {
       cancelAnimationFrame(animationFrameId);
     };

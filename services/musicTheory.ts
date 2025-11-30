@@ -1,3 +1,4 @@
+
 import { ALL_NOTES_CHROMATIC, KEYBOARD_NOTES, SOLFEGE_SYLLABLES_SHARP, SOLFEGE_SYLLABLES_FLAT, SHARP_TO_FLAT, FLAT_TO_SHARP, SHARP_KEYS, FLAT_KEYS, ROMAN_NUMERALS, MAJOR_SCALE_INTERVALS, MINOR_SCALE_INTERVALS, MAJOR_SCALE_CHORD_QUALITIES, MINOR_SCALE_CHORD_QUALITIES } from '../constants';
 import type { ChordMode } from '../types';
 
@@ -274,4 +275,55 @@ export const getDiatonicChordNotesForKey = (key: string, degree: 1 | 4 | 5 | 6):
         const chroma = NOTE_NAME_TO_CHROMATIC_INDEX[match[1]];
         return chroma !== undefined && chordNoteChromas.has(chroma);
     });
+};
+
+/**
+ * Attempts to detect a chord from a set of notes.
+ * Simple algorithm checks intervals against Major, Minor, and Diminished triads.
+ */
+export const detectChordFromNotes = (notes: string[]): string | null => {
+    if (notes.length === 0) return null;
+
+    // 1. Convert to unique chromatic indices (0-11)
+    const chromas = Array.from(new Set(notes.map(n => {
+        const norm = normalizeNoteName(n);
+        const match = norm.match(/([A-G]#?)/);
+        return match ? NOTE_NAME_TO_CHROMATIC_INDEX[match[1]] : null;
+    }).filter(c => c !== null && c !== undefined))) as number[];
+
+    if (chromas.length === 0) return null;
+
+    // If only one distinct note, return just that note
+    if (chromas.length === 1) {
+        return SHARP_KEYS[chromas[0]];
+    }
+
+    // 2. Brute force check: Treat each note as the root
+    for (const root of chromas) {
+        // Calculate intervals relative to this root
+        const intervals = chromas.map(c => (c - root + 12) % 12).sort((a, b) => a - b);
+        
+        // Helper to check subset
+        const has = (vals: number[]) => vals.every(v => intervals.includes(v));
+
+        const rootName = SHARP_KEYS[root];
+
+        // Major Triad: 0, 4, 7
+        if (has([0, 4, 7])) return rootName; // e.g. "C"
+        
+        // Minor Triad: 0, 3, 7
+        if (has([0, 3, 7])) return `${rootName}m`;
+
+        // Diminished: 0, 3, 6
+        if (has([0, 3, 6])) return `${rootName}°`;
+        
+        // Sus4: 0, 5, 7
+        if (has([0, 5, 7])) return `${rootName}sus4`;
+        
+         // Sus2: 0, 2, 7
+        if (has([0, 2, 7])) return `${rootName}sus2`;
+    }
+    
+    // If no perfect triad match, just return the first note as a fallback/bass note
+    return SHARP_KEYS[chromas[0]];
 };

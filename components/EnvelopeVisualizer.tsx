@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { ADSREnvelope } from '../types';
 
@@ -13,20 +14,18 @@ export const EnvelopeVisualizer: React.FC<EnvelopeVisualizerProps> = ({ adsr }) 
   const { attack, decay, sustain, release } = adsr;
 
   // Dynamically calculate the total duration for scaling based on current values.
-  // This ensures the graph always fills the available width.
-  // Add a small epsilon to prevent division by zero if all are 0.
   const totalDuration = attack + decay + SUSTAIN_HOLD_DURATION + release + 1e-6;
   
   const width = 200;
   const height = 60;
 
-  // Calculate X coordinates as a percentage of the dynamic total duration.
+  // Calculate X coordinates
   const attackX = (attack / totalDuration) * width;
   const decayX = ((attack + decay) / totalDuration) * width;
   const sustainX = ((attack + decay + SUSTAIN_HOLD_DURATION) / totalDuration) * width;
-  const releaseX = width; // Release always ends at the far right.
+  const releaseX = width; 
 
-  // Calculate Y coordinates (inverted, since SVG y=0 is at the top)
+  // Calculate Y coordinates (inverted)
   const sustainY = height - (sustain * height);
 
   const pathData = `
@@ -37,7 +36,7 @@ export const EnvelopeVisualizer: React.FC<EnvelopeVisualizerProps> = ({ adsr }) 
     L ${releaseX},${height}
   `;
 
-  // Position labels centered within their respective segments
+  // Position labels
   const labelY = height + 12;
   const attackLabelX = attackX / 2;
   const decayLabelX = attackX + (decayX - attackX) / 2;
@@ -53,8 +52,13 @@ export const EnvelopeVisualizer: React.FC<EnvelopeVisualizerProps> = ({ adsr }) 
             stroke="#3D3D3D" strokeWidth="1" strokeDasharray="2,2" 
         />
         
-        {/* Envelope Path with glow */}
-        <path d={pathData} stroke="#00FFFF" strokeWidth="2" fill="rgba(0, 255, 255, 0.15)" />
+        {/* Envelope Path with glow using modern RGB syntax for opacity */}
+        <path 
+            d={pathData} 
+            stroke="rgb(var(--accent-500))" 
+            strokeWidth="2" 
+            fill="rgb(var(--accent-500) / 0.15)" 
+        />
         
         {/* Vertical separator lines */}
         <line x1={attackX} y1="0" x2={attackX} y2={height} stroke="#3D3D3D" strokeWidth="0.5" />

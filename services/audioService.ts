@@ -1,5 +1,5 @@
 
-import type { ADSREnvelope, OscillatorSettings, LoopEvent, SynthSettings, FilterSettings, DelaySettings, ReverbSettings, SaturationSettings, PhaserSettings, ChorusSettings, LFOSettings, LFOTarget, PresetCategory, SampleSettings } from '../types';
+import type { ADSREnvelope, OscillatorSettings, LoopEvent, SynthSettings, FilterSettings, DelaySettings, ReverbSettings, SaturationSettings, PhaserSettings, ChorusSettings, LFOSettings, LFOTarget, PresetCategory, SampleSettings, DrumType } from '../types';
 import { NOTE_FREQUENCIES, JUST_INTONATION_RATIOS, ALL_NOTES_CHROMATIC, DEFAULT_LFO_SETTINGS } from '../constants';
 
 interface ActiveNode {
@@ -72,9 +72,15 @@ export class AudioEngine {
   private lfoTarget: LFOTarget | 'none' = 'none';
   private lfoSettings: LFOSettings = DEFAULT_LFO_SETTINGS;
 
+  // Shared Buffers for Drums
+  private noiseBuffer: AudioBuffer;
+
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     
+    // Create Noise Buffer for Snare/HiHat
+    this.noiseBuffer = this.createNoiseBuffer();
+
     ALL_NOTES_CHROMATIC.forEach((note, index) => {
         this.noteToIndexMap.set(note, index);
     });
@@ -209,6 +215,92 @@ export class AudioEngine {
     this.allpassFilter.connect(this.analyserY);
   }
 
+  private createNoiseBuffer(): AudioBuffer {
+      const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds
+      const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+      }
+      return buffer;
+  }
+
+  public playDrum(type: DrumType, time: number) {
+      const t = time;
+      
+      if (type === 'kick') {
+          const osc = this.audioContext.createOscillator();
+          const gain = this.audioContext.createGain();
+          
+          osc.connect(gain);
+          gain.connect(this.masterCompressor); // Bypass synth FX, straight to compressor
+          
+          osc.frequency.setValueAtTime(150, t);
+          osc.frequency.exponentialRampToValueAtTime(0.01, t + 0.5);
+          
+          gain.gain.setValueAtTime(1, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+          
+          osc.start(t);
+          osc.stop(t + 0.5);
+      } else if (type === 'snare') {
+          // Noise part
+          const noise = this.audioContext.createBufferSource();
+          noise.buffer = this.noiseBuffer;
+          const noiseFilter = this.audioContext.createBiquadFilter();
+          noiseFilter.type = 'highpass';
+          noiseFilter.frequency.value = 1000;
+          const noiseGain = this.audioContext.createGain();
+          
+          noise.connect(noiseFilter);
+          noiseFilter.connect(noiseGain);
+          noiseGain.connect(this.masterCompressor);
+          
+          noiseGain.gain.setValueAtTime(1, t);
+          noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+          
+          noise.start(t);
+          noise.stop(t + 0.2);
+          
+          // Tonal part (body)
+          const osc = this.audioContext.createOscillator();
+          osc.type = 'triangle';
+          const oscGain = this.audioContext.createGain();
+          
+          osc.connect(oscGain);
+          oscGain.connect(this.masterCompressor);
+          
+          osc.frequency.setValueAtTime(250, t);
+          oscGain.gain.setValueAtTime(0.5, t);
+          oscGain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+          
+          osc.start(t);
+          osc.stop(t + 0.1);
+          
+      } else if (type === 'hihat') {
+          // High hat
+          const source = this.audioContext.createBufferSource();
+          source.buffer = this.noiseBuffer;
+          
+          const filter = this.audioContext.createBiquadFilter();
+          filter.type = 'highpass';
+          filter.frequency.value = 5000;
+          
+          const gain = this.audioContext.createGain();
+          
+          source.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.masterCompressor);
+          
+          // Sharp envelope
+          gain.gain.setValueAtTime(0.6, t);
+          gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+          
+          source.start(t);
+          source.stop(t + 0.05);
+      }
+  }
+
   private createImpulseResponse(duration: number, decay: number): AudioBuffer {
     const sampleRate = this.audioContext.sampleRate;
     const length = sampleRate * duration;
@@ -315,7 +407,7 @@ export class AudioEngine {
     }
     this.retuneTimeout = window.setTimeout(() => {
       this.retuneActiveNotes();
-    }, 5);
+    }, 30); // Increased to 30ms to catch chords being played slightly arpeggiated
   }
 
   public playNote(
@@ -326,7 +418,8 @@ export class AudioEngine {
     mix: number, 
     time?: number, 
     rootNote?: string,
-    category?: PresetCategory
+    category?: PresetCategory,
+    warpRatio: number = 1.0
   ): void {
     if (this.audioContext.state === 'suspended') this.audioContext.resume();
 
@@ -368,9 +461,13 @@ export class AudioEngine {
          // Pitch calculation assuming C4 (MIDI 60) is the root of the sample
          const rootMidi = 60; 
          const noteMidi = this.noteToIndexMap.get(note) ? this.noteToIndexMap.get(note)! + 24 : 60;
-         const playbackRate = Math.pow(2, (noteMidi - rootMidi) / 12);
+         const pitchRatio = Math.pow(2, (noteMidi - rootMidi) / 12);
          
-         source.playbackRate.value = playbackRate;
+         // Apply Warp Ratio (Current BPM / Original BPM)
+         // If Warp is 1.0, speed is just determined by pitch.
+         // If Warp > 1 (faster BPM), sample plays faster.
+         source.playbackRate.value = pitchRatio * warpRatio;
+         
          source.connect(adsrGain);
          
          // Zero-Crossing Snap Logic to prevent clicks
@@ -398,6 +495,9 @@ export class AudioEngine {
          } else {
              // For one-shot, we still use safe start, but duration is derived from safe endpoints
              const duration = safeEndTime - safeStartTime;
+             // Adjust duration by playback rate so ADSR matches actual sound length
+             const adjustedDuration = duration / (pitchRatio * warpRatio);
+             
              source.start(now, safeStartTime, duration);
          }
          
@@ -720,8 +820,9 @@ export class AudioEngine {
     const targetFreq1 = targetFrequency * Math.pow(2, node.osc1Settings.octave);
     const targetFreq2 = targetFrequency * Math.pow(2, node.osc2Settings.octave);
 
-    if (s1 instanceof OscillatorNode) s1.frequency.setTargetAtTime(targetFreq1, now, 0.003);
-    if (s2 instanceof OscillatorNode) s2.frequency.setTargetAtTime(targetFreq2, now, 0.003);
+    // Use a slower time constant (0.1s) to make the tuning adjustment visible and audible as a slide
+    if (s1 instanceof OscillatorNode) s1.frequency.setTargetAtTime(targetFreq1, now, 0.1);
+    if (s2 instanceof OscillatorNode) s2.frequency.setTargetAtTime(targetFreq2, now, 0.1);
   }
 
   private retuneActiveNotes(): void {

@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect } from 'react';
 
 interface LoopVisualizerProps {
@@ -11,9 +12,14 @@ const CANVAS_HEIGHT = 64; // Corresponds to h-16 in Tailwind
 export const LoopVisualizer: React.FC<LoopVisualizerProps> = ({ audioBuffer, progress }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const waveformDataRef = useRef<{ min: number; max: number }[]>([]);
+  const progressRef = useRef(progress);
+
+  // Keep progressRef updated
+  useEffect(() => {
+      progressRef.current = progress;
+  }, [progress]);
 
   // 1. Pre-process the audio buffer into drawable data points whenever it changes.
-  // This is the performance-intensive part, so we only run it when the loop audio changes.
   useEffect(() => {
     if (!audioBuffer) {
       waveformDataRef.current = [];
@@ -38,8 +44,7 @@ export const LoopVisualizer: React.FC<LoopVisualizerProps> = ({ audioBuffer, pro
     waveformDataRef.current = points;
   }, [audioBuffer]);
 
-  // 2. Use an animation loop to draw the pre-processed data and the progress bar.
-  // This part is lightweight and runs every frame for smooth animation.
+  // 2. Use a dedicated animation loop that reads from the Ref
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -53,7 +58,8 @@ export const LoopVisualizer: React.FC<LoopVisualizerProps> = ({ audioBuffer, pro
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       
       const waveform = waveformDataRef.current;
-      const isPlaying = progress > 0 && progress < 1;
+      const currentProgress = progressRef.current;
+      const isPlaying = currentProgress > 0 && currentProgress < 1;
 
       // Draw the waveform if data is available
       if (waveform.length > 0) {
@@ -73,7 +79,7 @@ export const LoopVisualizer: React.FC<LoopVisualizerProps> = ({ audioBuffer, pro
 
       // Draw progress cursor if playing
       if (isPlaying) {
-        const x = progress * CANVAS_WIDTH;
+        const x = currentProgress * CANVAS_WIDTH;
         ctx.strokeStyle = '#FBBF24'; // amber-400, a nice yellow for the cursor
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -82,18 +88,15 @@ export const LoopVisualizer: React.FC<LoopVisualizerProps> = ({ audioBuffer, pro
         ctx.stroke();
       }
       
-      // Only continue the animation loop if we are actively playing back
-      if (isPlaying) {
-        animationFrameId = requestAnimationFrame(draw);
-      }
+      animationFrameId = requestAnimationFrame(draw);
     };
 
-    draw(); // Initial draw
+    draw(); // Start loop
 
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [progress, audioBuffer]); // Dependency on audioBuffer ensures redraw if loop is cleared
+  }, []); // Run ONCE on mount
 
   return (
     <canvas 
