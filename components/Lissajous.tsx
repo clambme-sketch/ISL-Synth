@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect } from 'react';
 
 interface LissajousProps {
@@ -44,7 +45,7 @@ export const Lissajous: React.FC<LissajousProps> = ({ analyserX, analyserY, colo
     
     colorsRef.current = { x: cX, y: cY };
 
-  }, [colorX, colorY]); // Also runs on mount/updates
+  }); // Removed dependency array to ensure it runs on every render to catch CSS var changes
 
   useEffect(() => {
     if (!analyserX || !analyserY) return;

@@ -1125,6 +1125,7 @@ const App: React.FC = () => {
         
         <main className="flex flex-col gap-8">
           <Controls 
+            key={activeCategory} // Force re-render on category change for visualizer theme update
             adsr={adsr} setAdsr={setAdsr}
             osc1={osc1} setOsc1={setOsc1}
             osc2={osc2} setOsc2={setOsc2}

@@ -112,12 +112,11 @@ export const Controls: React.FC<ControlsProps> = ({
         </div>
       </div>
 
-      {/* --- MAIN CONTROLS GRID --- */}
-      {/* Responsive: Stack on mobile, grid on desktop */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-stretch">
+      {/* --- ROW 1: SOUND SOURCE & ENVELOPE --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
         
-        {/* LEFT COLUMN: Source / Sampler */}
-        <div className="lg:col-span-2 xl:col-span-2 flex flex-col">
+        {/* LEFT: Source / Sampler (Takes 2/3 of width) */}
+        <div className="lg:col-span-2 flex flex-col h-full">
             {isSamplingMode ? (
                 <SampleSection 
                     onSampleLoad={onSampleLoad}
@@ -152,15 +151,16 @@ export const Controls: React.FC<ControlsProps> = ({
             )}
         </div>
 
-        {/* MIDDLE COLUMN: Envelope */}
-        <div className="lg:col-span-1">
+        {/* RIGHT: Envelope (Takes 1/3 of width) */}
+        <div className="lg:col-span-1 h-full">
             <EnvelopeSection adsr={adsr} setAdsr={setAdsr} showTooltips={showTooltips} />
         </div>
+      </div>
 
-        {/* RIGHT COLUMN: Visualizers */}
-        <div className="lg:col-span-3 xl:col-span-1 flex flex-row gap-4 h-full min-h-[250px]">
+      {/* --- ROW 2: VISUALIZERS --- */}
+      <div className="flex flex-col md:flex-row gap-4 w-full h-[280px]">
             {/* Left: Spectrum Analyzer */}
-            <div className="bg-synth-gray-800 p-4 rounded-lg flex flex-col flex-1 w-full lg:w-1/2">
+            <div className="bg-synth-gray-800 p-4 rounded-lg flex flex-col flex-1 w-full md:w-1/2">
                 <div className="flex justify-between items-center mb-1">
                     <h3 className="text-sm font-bold text-synth-gray-500 uppercase tracking-wider">Spectrum</h3>
                 </div>
@@ -172,7 +172,7 @@ export const Controls: React.FC<ControlsProps> = ({
             </div>
 
             {/* Right: X/Y Scope (Phase) */}
-            <div className="bg-synth-gray-800 p-4 rounded-lg flex flex-col flex-1 w-full lg:w-1/2">
+            <div className="bg-synth-gray-800 p-4 rounded-lg flex flex-col flex-1 w-full md:w-1/2">
                 <div className="flex justify-between items-center mb-1">
                     <h3 className="text-sm font-bold text-synth-gray-500 uppercase tracking-wider">X/Y Phase</h3>
                 </div>
@@ -187,7 +187,6 @@ export const Controls: React.FC<ControlsProps> = ({
                     </div>
                 </div>
             </div>
-        </div>
       </div>
     </div>
   );
