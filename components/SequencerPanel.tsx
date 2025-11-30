@@ -365,12 +365,12 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
 
          <div
             id="sequencer-content"
-            className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[800px] opacity-100 overflow-visible' : 'max-h-0 opacity-0 overflow-hidden'}`}
+            className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[1200px] opacity-100 overflow-visible' : 'max-h-0 opacity-0 overflow-hidden'}`}
         >
-            <div className="pt-6 border-t border-synth-gray-700/50 flex flex-col xl:flex-row gap-8 items-start">
+            <div className="pt-6 border-t border-synth-gray-700/50 flex flex-col gap-6 items-start">
               
-              {/* LEFT: Metronome/Drums Controls */}
-              <div className="w-full xl:w-1/3 flex flex-col gap-5 flex-shrink-0 bg-synth-gray-800 p-5 rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] border border-synth-gray-700">
+              {/* TOP: Metronome/Drums Controls */}
+              <div className="w-full flex flex-col gap-5 flex-shrink-0 bg-synth-gray-800 p-5 rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] border border-synth-gray-700">
                 
                 {/* Header & Status */}
                 <div className="flex justify-between items-end">
@@ -520,8 +520,8 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                 </div>
               </div>
 
-              {/* RIGHT: Looper Interface */}
-              <div className="flex-1 flex flex-row items-center justify-between gap-6 w-full h-full p-6 bg-synth-gray-800/50 rounded-xl border border-synth-gray-700/30">
+              {/* BOTTOM: Looper Interface */}
+              <div className="flex flex-row items-center justify-between gap-6 w-full p-6 bg-synth-gray-800/50 rounded-xl border border-synth-gray-700/30">
                    
                    {/* 1. Visual Clock */}
                    <ClockVisualizer 

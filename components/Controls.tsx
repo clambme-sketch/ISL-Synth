@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { ADSREnvelope, OscillatorSettings, SynthPreset, PresetCategory } from '../types';
 import { Lissajous } from './Lissajous';
@@ -171,10 +170,10 @@ export const Controls: React.FC<ControlsProps> = ({
                 </div>
             </div>
 
-            {/* Right: X/Y Scope (Phase) */}
+            {/* Right: Lissajous */}
             <div className="bg-synth-gray-800 p-4 rounded-lg flex flex-col flex-1 w-full md:w-1/2">
                 <div className="flex justify-between items-center mb-1">
-                    <h3 className="text-sm font-bold text-synth-gray-500 uppercase tracking-wider">X/Y Phase</h3>
+                    <h3 className="text-sm font-bold text-synth-gray-500 uppercase tracking-wider">Lissajous</h3>
                 </div>
                 <div className="flex-grow bg-black rounded border border-synth-gray-700 overflow-hidden relative shadow-inner">
                     <div className="absolute inset-0">
