@@ -195,7 +195,7 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                         <SliderControl 
                             label="Depth" 
                             value={settings.depth} 
-                            defaultValue={defaultDepth}
+                            defaultValue={defaultDepth} 
                             min={0} 
                             max={1} 
                             step={0.01} 
@@ -207,5 +207,6 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                 </div>
             </div>
         </div>
-    );
+    </div>
+  );
 };
