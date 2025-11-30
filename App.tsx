@@ -105,7 +105,7 @@ const App: React.FC = () => {
   
   // --- SEQUENCER & DRUM STATE ---
   const [sequencerMode, setSequencerMode] = useState<'metronome' | 'drums'>('metronome');
-  const sequencerModeRef = useRef(sequencerMode); // Ref to access mode inside scheduler callback
+  const sequencerModeRef = useRef(sequencerMode); 
   useEffect(() => { sequencerModeRef.current = sequencerMode; }, [sequencerMode]);
 
   const [drumPattern, setDrumPattern] = useState<DrumPattern>({
@@ -173,22 +173,95 @@ const App: React.FC = () => {
   const sustainOnRef = useRef(sustainOn); 
   useEffect(() => { sustainOnRef.current = sustainOn; }, [sustainOn]);
 
-  // Audio scheduler callback for drums
-  const handleSchedulerStep = useCallback((step: number, time: number) => {
-      // GUARD: Only play drums if we are in 'drums' mode
-      if (sequencerModeRef.current !== 'drums') return;
+  // Arpeggiator needs to be defined BEFORE useMetronome to extract onExternalClockStep
+  // Combine all inputs for Arp: Pressed keys, MIDI, Sustained keys, Sequencer (Song Builder)
+  const allHeldNotes = useMemo(() => {
+      const combined = new Set(sequencerHeldNotes); // Start with sequencer notes (already chords)
 
-      const pattern = drumPatternRef.current;
-      if (pattern.kick[step]) audioEngineRef.current?.playDrum('kick', time);
-      if (pattern.snare[step]) audioEngineRef.current?.playDrum('snare', time);
-      if (pattern.hihat[step]) audioEngineRef.current?.playDrum('hihat', time);
+      // Add sustained chords (already chords)
+      sustainedChords.forEach(data => data.notes.forEach(n => combined.add(n)));
+
+      const addNotes = (notes: Iterable<string>) => {
+          for (const note of notes) {
+              if (autoChordsOn) {
+                  const chordNotes = getChordNotes(note, chordMode, { key: musicKey, scale: diatonicScale });
+                  chordNotes.forEach(n => combined.add(n));
+              } else {
+                  combined.add(note);
+              }
+          }
+      };
+
+      addNotes(pressedNotes);
+      addNotes(midiPressedNotes);
+      addNotes(sustainedNotes.keys());
+
+      return combined;
+  }, [pressedNotes, midiPressedNotes, sustainedNotes, sustainedChords, sequencerHeldNotes, autoChordsOn, chordMode, musicKey, diatonicScale]);
+
+  const handleArpPlayNote = useCallback((note: string, time: number, duration: number) => {
+      if (!audioEngineRef.current) return;
+      const settings = synthSettingsRef.current;
+      
+      audioEngineRef.current.playNote(
+          note, 
+          settings.adsr, 
+          settings.osc1, 
+          settings.osc2, 
+          settings.oscMix, 
+          time, 
+          note, 
+          settings.activeCategory,
+          settings.warpRatio
+      );
+
+      audioEngineRef.current.stopNote(note, settings.adsr.release, time + duration);
+  }, []);
+
+  // We need to know if Metronome is playing for the Arpeggiator hook, 
+  // but useMetronome (which controls it) is defined below. 
+  // We use a state that is synced or the hook instance itself.
+  // Ideally, useMetronome is called first, but we need onExternalClockStep for its callback.
+  // Solution: We use a Ref for onExternalClockStep and update it after useArpeggiator is called.
+  const onArpStepRef = useRef<(step: number, time: number) => void>(() => {});
+
+  // Audio scheduler callback for drums AND Arp
+  const handleSchedulerStep = useCallback((step: number, time: number) => {
+      // 1. Drum Machine Logic
+      if (sequencerModeRef.current === 'drums') {
+          const pattern = drumPatternRef.current;
+          if (pattern.kick[step]) audioEngineRef.current?.playDrum('kick', time);
+          if (pattern.snare[step]) audioEngineRef.current?.playDrum('snare', time);
+          if (pattern.hihat[step]) audioEngineRef.current?.playDrum('hihat', time);
+      }
+
+      // 2. Arpeggiator Sync (always called if metronome is running)
+      if (onArpStepRef.current) {
+          onArpStepRef.current(step, time);
+      }
   }, []);
 
   const { isMetronomePlaying, bpm, setBpm, toggleMetronome, metronomeTick, beatInfo, currentStep } = useMetronome({
     audioContext: audioEngineRef.current?.getAudioContext() ?? null,
     onStep: handleSchedulerStep,
-    muteClick: sequencerMode === 'drums' // Mute metronome click when Drum Machine is active
+    muteClick: sequencerMode === 'drums' 
   });
+
+  const { onExternalClockStep } = useArpeggiator({
+      bpm,
+      settings: arpSettings,
+      heldNotes: allHeldNotes,
+      audioContext: audioEngineRef.current?.getAudioContext() ?? null,
+      onPlayNote: handleArpPlayNote,
+      octaveOffset: octaveOffset,
+      isExternalClockActive: isMetronomePlaying // Lock Arp to Metronome when playing
+  });
+
+  // Sync the ref so handleSchedulerStep can call it
+  useEffect(() => {
+      onArpStepRef.current = onExternalClockStep;
+  }, [onExternalClockStep]);
+
 
   // Calculate Warping Factor
   const warpRatio = useMemo(() => {
@@ -251,11 +324,8 @@ const App: React.FC = () => {
 
   // --- FREQUENCY MONITORING ---
   // This effect polls the audio engine for the current frequency of active notes
-  // so the UI can display live Hz values (crucial for verifying Adaptive Tuning).
   useEffect(() => {
     if (keyboardDisplayMode !== 'hz') {
-        // If we are not in Hz mode, we don't need to poll.
-        // Clear frequencies to avoid stale state if we switch back later.
         if (noteFrequencies.size > 0) setNoteFrequencies(new Map());
         return;
     }
@@ -277,60 +347,6 @@ const App: React.FC = () => {
     };
   }, [keyboardDisplayMode, isInitialized]);
 
-
-  // --- ARPEGGIATOR LOGIC ---
-  const handleArpPlayNote = useCallback((note: string, time: number, duration: number) => {
-      if (!audioEngineRef.current) return;
-      const settings = synthSettingsRef.current;
-      
-      audioEngineRef.current.playNote(
-          note, 
-          settings.adsr, 
-          settings.osc1, 
-          settings.osc2, 
-          settings.oscMix, 
-          time, 
-          note, 
-          settings.activeCategory,
-          settings.warpRatio
-      );
-
-      audioEngineRef.current.stopNote(note, settings.adsr.release, time + duration);
-  }, []);
-
-  // Combine all inputs for Arp: Pressed keys, MIDI, Sustained keys, Sequencer (Song Builder)
-  const allHeldNotes = useMemo(() => {
-      const combined = new Set(sequencerHeldNotes); // Start with sequencer notes (already chords)
-
-      // Add sustained chords (already chords)
-      sustainedChords.forEach(data => data.notes.forEach(n => combined.add(n)));
-
-      const addNotes = (notes: Iterable<string>) => {
-          for (const note of notes) {
-              if (autoChordsOn) {
-                  const chordNotes = getChordNotes(note, chordMode, { key: musicKey, scale: diatonicScale });
-                  chordNotes.forEach(n => combined.add(n));
-              } else {
-                  combined.add(note);
-              }
-          }
-      };
-
-      addNotes(pressedNotes);
-      addNotes(midiPressedNotes);
-      addNotes(sustainedNotes.keys());
-
-      return combined;
-  }, [pressedNotes, midiPressedNotes, sustainedNotes, sustainedChords, sequencerHeldNotes, autoChordsOn, chordMode, musicKey, diatonicScale]);
-
-  useArpeggiator({
-      bpm,
-      settings: arpSettings,
-      heldNotes: allHeldNotes,
-      audioContext: audioEngineRef.current?.getAudioContext() ?? null,
-      onPlayNote: handleArpPlayNote,
-      octaveOffset: octaveOffset
-  });
 
   const looperNoteOn = useCallback((note: string, time?: number) => {
     const settings = synthSettingsRef.current;
@@ -618,8 +634,6 @@ const App: React.FC = () => {
         const halfMeasure = measureDuration / 2;
         
         // Analyze notes for Beat 1
-        // We look for notes that start around beat 1 or are sustaining through it
-        // Simpler approach: notes playing at (measureStart + 0.1s)
         const notesAtBeat1 = new Set<string>();
         const notesAtBeat3 = new Set<string>();
         
@@ -643,9 +657,6 @@ const App: React.FC = () => {
         const chord1 = detectChordFromNotes(Array.from(notesAtBeat1));
         const chord2 = detectChordFromNotes(Array.from(notesAtBeat3));
         
-        // If chord2 is same as chord1, we can just use chord1 for the whole measure (or explicitly list both)
-        // SongBuilder UI supports [chord1, chord2] or [chord1]
-        // Let's use two slots for detail if they differ
         const chords = (chord1 !== chord2 && chord2) ? [chord1, chord2] : [chord1];
 
         newSequence.push({
@@ -685,7 +696,7 @@ const App: React.FC = () => {
               else if (suffix === '7') mode = 'dominant7';
               else if (suffix === '°' || suffix === 'dim') mode = 'diminished';
               else if (suffix === '+' || suffix === 'aug') mode = 'augmented';
-              else if (suffix === 'sus4') mode = 'major'; // fallback or add sus4 mode later
+              else if (suffix === 'sus4') mode = 'major'; 
               else if (suffix === 'sus2') mode = 'major';
 
               // Default to Octave 4
@@ -704,8 +715,6 @@ const App: React.FC = () => {
           }
       } else {
           // Parse Roman Numeral (Relative to Key)
-          
-          // Clean the numeral
           const rawRoman = chordName.replace('°', '').replace('+', ''); 
           const degreeIdx = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii'].indexOf(rawRoman.toLowerCase());
           
@@ -779,19 +788,6 @@ const App: React.FC = () => {
       return songPatterns[activePatternIndex].sequence;
   }, [arrangementPlaying, songArrangement, songPatterns, activePatternIndex]);
 
-  // We check which index in the FULL arrangement corresponds to the start of the current block
-  // to highlight the correct block in the Arranger panel
-  const currentBlockIndex = useMemo(() => {
-      if (!arrangementPlaying) return -1;
-      
-      let measureCount = 0;
-      // Note: currentMeasureIndex comes from useSongPlayer below
-      // We need to find which block encompasses this measure index
-      // We'll calculate this inside the render or effect, but here we don't have currentMeasureIndex yet.
-      return -1; // Placeholder, calculated later
-  }, [arrangementPlaying]);
-
-
   const { isPlaying: isPlayerActive, togglePlay: toggleSongPlay, currentMeasureIndex, stop: stopSong } = useSongPlayer({
       bpm,
       sequence: currentSequence,
@@ -804,10 +800,6 @@ const App: React.FC = () => {
   // Sync local playing state with the hook
   useEffect(() => {
       setIsPlaying(isPlayerActive);
-      if (!isPlayerActive) {
-          // Reset arrangement playing state when stop is triggered naturally
-          // setArrangementPlaying(false); // Optional: keep it set if we want resume behavior? No, stop is stop.
-      }
   }, [isPlayerActive]);
 
   const handlePatternPlayPause = () => {
@@ -936,7 +928,7 @@ const App: React.FC = () => {
       } catch (error) {
           console.error("Error decoding audio sample:", error);
       }
-  }, [bpm]); // Depend on BPM to capture current tempo on load
+  }, [bpm]); 
   
   const handleTrimChange = (start: number, end: number) => {
       setTrimStart(start);

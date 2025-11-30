@@ -10,6 +10,7 @@ interface UseArpeggiatorProps {
     audioContext: AudioContext | null;
     onPlayNote: (note: string, time: number, duration: number) => void;
     octaveOffset: number;
+    isExternalClockActive?: boolean;
 }
 
 // Robust helper to parse note name to MIDI for sorting
@@ -46,7 +47,8 @@ export const useArpeggiator = ({
     heldNotes,
     audioContext,
     onPlayNote,
-    octaveOffset
+    octaveOffset,
+    isExternalClockActive = false
 }: UseArpeggiatorProps) => {
     const nextNoteTimeRef = useRef<number>(0);
     const stepIndexRef = useRef<number>(0);
@@ -55,47 +57,41 @@ export const useArpeggiator = ({
     // Use refs for mutable data to avoid stale closures
     const settingsRef = useRef(settings);
     const sortedNotesRef = useRef<string[]>([]);
+    
+    // Latch Logic Refs
     const latchedNotesRef = useRef<Set<string>>(new Set());
+    const prevHeldSizeRef = useRef<number>(0);
+    const releaseTimerRef = useRef<number | null>(null);
+    const heldNotesRef = useRef<Set<string>>(new Set()); // Mirror of heldNotes for timer access
     
     // Ref to hold scheduler to avoid circular deps
-    const schedulerRef = useRef<() => void>(() => {});
+    const internalSchedulerRef = useRef<() => void>(() => {});
 
     // Update settings ref
     useEffect(() => {
         settingsRef.current = settings;
     }, [settings]);
-
-    // Handle Note Logic (Sorting + Standard Latching)
+    
     useEffect(() => {
-        const isLatchOn = settings.latch;
-        const currentHeld = heldNotes;
-        
-        let notesToPlay: Set<string>;
+        heldNotesRef.current = heldNotes;
+    }, [heldNotes]);
 
-        if (isLatchOn) {
-            if (currentHeld.size > 0) {
-                latchedNotesRef.current = new Set(currentHeld);
-                notesToPlay = currentHeld;
-            } else {
-                notesToPlay = latchedNotesRef.current;
-            }
-        } else {
-            latchedNotesRef.current.clear();
-            notesToPlay = currentHeld;
-        }
+    // Helper: Sort and extend notes based on settings
+    const processPattern = useCallback((notesSet: Set<string>) => {
+        let notes = Array.from(notesSet);
+        const currentSettings = settingsRef.current;
 
-        if (notesToPlay.size === 0) {
+        if (notes.length === 0) {
             sortedNotesRef.current = [];
             return;
         }
 
-        let notes = Array.from(notesToPlay);
-        if (settings.direction !== 'played' && settings.direction !== 'random') {
+        if (currentSettings.direction !== 'played' && currentSettings.direction !== 'random') {
             notes.sort((a, b) => getMidiValue(a) - getMidiValue(b));
         }
 
         let extendedNotes: string[] = [];
-        for (let oct = 0; oct < settings.range; oct++) {
+        for (let oct = 0; oct < currentSettings.range; oct++) {
             const octaveShifted = notes.map(note => {
                 if (oct === 0) return note;
                 const midi = getMidiValue(note);
@@ -105,23 +101,107 @@ export const useArpeggiator = ({
         }
 
         let finalPattern: string[] = [];
-        if (settings.direction === 'up' || settings.direction === 'played') {
+        if (currentSettings.direction === 'up' || currentSettings.direction === 'played') {
             finalPattern = extendedNotes;
-        } else if (settings.direction === 'down') {
+        } else if (currentSettings.direction === 'down') {
             finalPattern = extendedNotes.reverse();
-        } else if (settings.direction === 'upDown') {
+        } else if (currentSettings.direction === 'upDown') {
             finalPattern = [...extendedNotes, ...extendedNotes.slice(1, -1).reverse()];
-        } else if (settings.direction === 'random') {
+        } else if (currentSettings.direction === 'random') {
             finalPattern = extendedNotes;
         }
 
         sortedNotesRef.current = finalPattern;
+    }, []);
 
-    }, [heldNotes, settings.direction, settings.range, settings.latch]);
+    // --- MAIN LATCH & NOTE LOGIC ---
+    useEffect(() => {
+        // Recalculate pattern whenever direction/range changes
+        processPattern(latchedNotesRef.current);
+    }, [settings.direction, settings.range, processPattern]);
 
-    // Define scheduler
-    const scheduler = useCallback(() => {
-        if (!audioContext || !settingsRef.current.on) return;
+    useEffect(() => {
+        if (!settings.latch) {
+            // Standard Mode: No latching, just play what is held
+            if (releaseTimerRef.current) clearTimeout(releaseTimerRef.current);
+            latchedNotesRef.current = new Set(heldNotes);
+            processPattern(heldNotes);
+            if (heldNotes.size === 0) stepIndexRef.current = 0;
+            return;
+        }
+
+        // --- SMART LATCH LOGIC ---
+        const currentSize = heldNotes.size;
+        const prevSize = prevHeldSizeRef.current;
+
+        if (currentSize > 0 && currentSize >= prevSize) {
+            // CASE 1: Adding notes or holding steady (0->1, 1->3, 3->3)
+            // Immediate update. New chord or adding to chord.
+            
+            if (releaseTimerRef.current) clearTimeout(releaseTimerRef.current);
+            
+            // If starting from 0, reset the step index for a fresh start
+            if (prevSize === 0) stepIndexRef.current = 0;
+
+            latchedNotesRef.current = new Set(heldNotes);
+            processPattern(latchedNotesRef.current);
+        
+        } else if (currentSize < prevSize) {
+            // CASE 2: Releasing notes (3->2, 2->0)
+            // Don't update immediately. Wait for "Human Error" window.
+            // This allows sloppy releases of chords without dropping notes instantly.
+            
+            if (releaseTimerRef.current) clearTimeout(releaseTimerRef.current);
+
+            releaseTimerRef.current = window.setTimeout(() => {
+                const currentRealtimeHeld = heldNotesRef.current;
+                
+                if (currentRealtimeHeld.size > 0) {
+                    // User partially released and held there (e.g. lifting 1 finger).
+                    // Update the latch to the new partial state.
+                    latchedNotesRef.current = new Set(currentRealtimeHeld);
+                    processPattern(latchedNotesRef.current);
+                } else {
+                    // User released EVERYTHING.
+                    // Keep the previous latch state (Sustain the full chord).
+                    // Do nothing here, preserving latchedNotesRef.
+                }
+            }, 150); // 150ms window for sloppy releases
+        }
+
+        prevHeldSizeRef.current = currentSize;
+
+    }, [heldNotes, settings.latch, processPattern]);
+
+    // --- CORE LOGIC: PLAY NEXT NOTE ---
+    const playNextStep = useCallback((time: number, duration: number) => {
+        const pattern = sortedNotesRef.current;
+        const currentSettings = settingsRef.current;
+
+        if (pattern.length > 0) {
+            let noteToPlay = '';
+            
+            if (currentSettings.direction === 'random') {
+                const randIdx = Math.floor(Math.random() * pattern.length);
+                noteToPlay = pattern[randIdx];
+            } else {
+                noteToPlay = pattern[stepIndexRef.current % pattern.length];
+            }
+            
+            // Transpose based on current keyboard octave shift
+            const midi = getMidiValue(noteToPlay);
+            const transposedNote = getNoteFromMidi(midi + (octaveOffset * 12));
+
+            onPlayNote(transposedNote, time, duration);
+        }
+
+        stepIndexRef.current++;
+    }, [octaveOffset, onPlayNote]);
+
+
+    // --- MODE 1: INTERNAL SCHEDULER (Free Running) ---
+    const internalScheduler = useCallback(() => {
+        if (!audioContext || !settingsRef.current.on || isExternalClockActive) return;
         
         const currentSettings = settingsRef.current;
         const secondsPerBeat = 60.0 / bpm;
@@ -139,48 +219,88 @@ export const useArpeggiator = ({
         const lookahead = 0.1; // 100ms lookahead
 
         while (nextNoteTimeRef.current < audioContext.currentTime + lookahead) {
-            const pattern = sortedNotesRef.current;
-            
-            if (pattern.length > 0) {
-                let noteToPlay = '';
-                
-                if (currentSettings.direction === 'random') {
-                    const randIdx = Math.floor(Math.random() * pattern.length);
-                    noteToPlay = pattern[randIdx];
-                } else {
-                    noteToPlay = pattern[stepIndexRef.current % pattern.length];
-                }
-                
-                // Transpose based on current keyboard octave shift
-                const midi = getMidiValue(noteToPlay);
-                const transposedNote = getNoteFromMidi(midi + (octaveOffset * 12));
-
-                onPlayNote(transposedNote, nextNoteTimeRef.current, gateDuration);
-            }
-
-            stepIndexRef.current++;
+            playNextStep(nextNoteTimeRef.current, gateDuration);
             nextNoteTimeRef.current += stepDuration;
         }
 
-        timerRef.current = window.setTimeout(() => schedulerRef.current(), 25);
-    }, [audioContext, bpm, octaveOffset, onPlayNote]);
+        timerRef.current = window.setTimeout(() => internalSchedulerRef.current(), 25);
+    }, [audioContext, bpm, isExternalClockActive, playNextStep]);
 
     useEffect(() => {
-        schedulerRef.current = scheduler;
-    }, [scheduler]);
+        internalSchedulerRef.current = internalScheduler;
+    }, [internalScheduler]);
 
-    // Start/Stop Scheduler
+
+    // --- MODE 2: EXTERNAL CLOCK HANDLER (Metronome Sync) ---
+    // This is called by the parent's metronome scheduler at 16th note intervals
+    const onExternalClockStep = useCallback((gridStep: number, time: number) => {
+        if (!settingsRef.current.on || !sortedNotesRef.current.length) return;
+
+        const rate = settingsRef.current.rate;
+        const secondsPerBeat = 60.0 / bpm;
+        
+        if (rate === '1/32') {
+            // Special handling for 32nd notes: Play two notes per 16th-note step
+            const thirtySecondDuration = secondsPerBeat * 0.125;
+            const gateDuration = thirtySecondDuration * settingsRef.current.gate;
+            
+            // Note 1: On grid
+            playNextStep(time, gateDuration);
+            
+            // Note 2: Halfway to next 16th
+            playNextStep(time + thirtySecondDuration, gateDuration);
+            return;
+        }
+
+        let shouldPlay = false;
+        let durationMultiplier = 0.25; // Default 16th note
+
+        // GridStep is 0-15 (16th notes)
+        if (rate === '1/16') {
+            shouldPlay = true; // Play every 16th
+            durationMultiplier = 0.25;
+        } else if (rate === '1/8') {
+            shouldPlay = gridStep % 2 === 0; // Play on 0, 2, 4...
+            durationMultiplier = 0.5;
+        } else if (rate === '1/4') {
+            shouldPlay = gridStep % 4 === 0; // Play on 0, 4, 8...
+            durationMultiplier = 1.0;
+        }
+
+        if (shouldPlay) {
+            const stepDuration = secondsPerBeat * durationMultiplier;
+            const gateDuration = stepDuration * settingsRef.current.gate;
+            playNextStep(time, gateDuration);
+        }
+    }, [bpm, playNextStep]);
+
+
+    // --- LIFECYCLE MANAGEMENT ---
     useEffect(() => {
         if (settings.on && audioContext) {
-            // Ensure we don't schedule in the past if restarting
-            nextNoteTimeRef.current = Math.max(nextNoteTimeRef.current, audioContext.currentTime + 0.05);
-            scheduler();
+            if (!isExternalClockActive) {
+                // START INTERNAL
+                // Ensure we don't schedule in the past if restarting
+                nextNoteTimeRef.current = Math.max(nextNoteTimeRef.current, audioContext.currentTime + 0.05);
+                internalScheduler();
+            } else {
+                // STOP INTERNAL (External will drive it)
+                if (timerRef.current) clearTimeout(timerRef.current);
+            }
         } else {
+            // STOP ALL
             if (timerRef.current) clearTimeout(timerRef.current);
-            latchedNotesRef.current.clear();
+            if (!settings.on) {
+                latchedNotesRef.current.clear();
+                sortedNotesRef.current = [];
+            }
         }
         return () => {
             if (timerRef.current) clearTimeout(timerRef.current);
         };
-    }, [settings.on, audioContext, scheduler]);
+    }, [settings.on, audioContext, internalScheduler, isExternalClockActive]);
+
+    return {
+        onExternalClockStep
+    };
 };

@@ -8,6 +8,12 @@ interface ActiveNode {
   osc1Settings?: OscillatorSettings;
   osc2Settings?: OscillatorSettings;
   rootNote: string;
+  // Timing info for envelope interruption
+  startTime: number;
+  attackDuration: number;
+  decayDuration: number;
+  peakGain: number;
+  sustainGain: number;
 }
 
 export class AudioEngine {
@@ -444,6 +450,8 @@ export class AudioEngine {
     const finalRootNote = rootNote || note;
     
     const adsrGain = this.audioContext.createGain();
+    // Initialize to 0 immediately to avoid start clicks
+    adsrGain.gain.value = 0;
     adsrGain.gain.setValueAtTime(0, now);
     
     // Routing Decision: Samples go to SampleBus, Synths go to MasterGain
@@ -452,6 +460,10 @@ export class AudioEngine {
     } else {
         adsrGain.connect(this.masterGain);
     }
+
+    const { attack, decay, sustain } = envelope;
+    const peakGain = 0.25;
+    const sustainGain = sustain * peakGain;
 
     // --- SAMPLING MODE ---
     if (category === 'Sampling' && this.sampleBuffer) {
@@ -464,8 +476,6 @@ export class AudioEngine {
          const pitchRatio = Math.pow(2, (noteMidi - rootMidi) / 12);
          
          // Apply Warp Ratio (Current BPM / Original BPM)
-         // If Warp is 1.0, speed is just determined by pitch.
-         // If Warp > 1 (faster BPM), sample plays faster.
          source.playbackRate.value = pitchRatio * warpRatio;
          
          source.connect(adsrGain);
@@ -475,11 +485,9 @@ export class AudioEngine {
          const channelData = this.sampleBuffer.getChannelData(0);
          const searchWindow = 500; // approx 10ms at 44.1k
          
-         // Calculate raw indices from 0-1 trim values
          const rawStartIdx = Math.floor(this.sampleSettings.trimStart * bufferLen);
          const rawEndIdx = Math.floor(Math.max(this.sampleSettings.trimEnd, this.sampleSettings.trimStart + 0.001) * bufferLen);
          
-         // Find safe zero crossings
          const safeStartIdx = this.findNearestPositiveZeroCrossing(channelData, rawStartIdx, searchWindow);
          const safeEndIdx = this.findNearestPositiveZeroCrossing(channelData, rawEndIdx, searchWindow);
          
@@ -490,18 +498,23 @@ export class AudioEngine {
              source.loop = true;
              source.loopStart = safeStartTime;
              source.loopEnd = safeEndTime;
-             // Start at loopStart to ensure the phase matches the loop return
              source.start(now, safeStartTime);
          } else {
-             // For one-shot, we still use safe start, but duration is derived from safe endpoints
              const duration = safeEndTime - safeStartTime;
-             // Adjust duration by playback rate so ADSR matches actual sound length
              const adjustedDuration = duration / (pitchRatio * warpRatio);
-             
              source.start(now, safeStartTime, duration);
          }
          
-         this.activeNodes.set(note, { sources: [source], adsrGain, rootNote: finalRootNote });
+         this.activeNodes.set(note, { 
+             sources: [source], 
+             adsrGain, 
+             rootNote: finalRootNote,
+             startTime: now,
+             attackDuration: attack,
+             decayDuration: decay,
+             peakGain,
+             sustainGain
+         });
     } 
     // --- SYNTH MODE (Subtractive, AM, FM) ---
     else {
@@ -526,7 +539,6 @@ export class AudioEngine {
 
         // Create a specific gain node for AM/Tremolo
         const amGain = this.audioContext.createGain();
-        // Default to unity gain. Logic below modifies this for Ring Mod.
         amGain.gain.value = 1.0; 
 
         osc1.connect(mix1Gain);
@@ -539,8 +551,7 @@ export class AudioEngine {
 
         // --- LFO MODULATION ---
         if (this.lfoSettings.on) {
-            // KEY SYNC FM (Linear Frequency Modulation)
-            // True FM: Modulator affects Frequency directly, not Pitch (logarithmic).
+            // KEY SYNC FM
             if (this.lfoSettings.keySync && this.lfoTarget === 'pitch') {
                 const mod = this.audioContext.createOscillator();
                 mod.type = this.lfoSettings.waveform;
@@ -548,9 +559,6 @@ export class AudioEngine {
                 mod.frequency.setValueAtTime(freq1 * modRatio, now);
                 
                 const modGain = this.audioContext.createGain();
-                // Boosted Index: Allow deep modulation for rich "Digital FM" sounds.
-                // Index of 3-4 creates rich sidebands (like bells/brass).
-                // The 'depth' slider (0-1) now maps to Index 0 to 4.
                 const MAX_FM_INDEX = 4.0;
                 const modulationIndex = this.lfoSettings.depth * MAX_FM_INDEX; 
                 modGain.gain.setValueAtTime(modulationIndex * freq1, now); 
@@ -563,8 +571,7 @@ export class AudioEngine {
                 mod.start(now);
                 sources.push(mod);
             } 
-            // KEY SYNC AM (Polyphonic AM / Ring Mod)
-            // True AM: Interpolates from Tremolo -> AM -> Ring Mod
+            // KEY SYNC AM
             else if (this.lfoSettings.keySync && this.lfoTarget === 'amplitude') {
                 const mod = this.audioContext.createOscillator();
                 mod.type = this.lfoSettings.waveform;
@@ -574,11 +581,6 @@ export class AudioEngine {
                 const modGain = this.audioContext.createGain();
                 modGain.gain.setValueAtTime(this.lfoSettings.depth, now);
 
-                // TRUE AM LOGIC:
-                // As depth increases, we lower the carrier bias (DC offset).
-                // Depth 0.0 -> Bias 1.0, Mod 0.0 (Unmodulated)
-                // Depth 0.5 -> Bias 0.5, Mod 0.5 (100% AM, unipolar)
-                // Depth 1.0 -> Bias 0.0, Mod 1.0 (Ring Modulation, bipolar)
                 const carrierBias = 1.0 - this.lfoSettings.depth;
                 amGain.gain.setValueAtTime(carrierBias, now);
 
@@ -587,24 +589,32 @@ export class AudioEngine {
                 mod.start(now);
                 sources.push(mod);
             }
-            // STANDARD LFO (Global Pitch/Detune Modulation)
+            // STANDARD LFO
             else if (this.lfoTarget === 'pitch' && !this.lfoSettings.keySync) {
                 this.lfoGain.connect(osc1.detune);
                 this.lfoGain.connect(osc2.detune);
             }
-            // Standard Global LFO (Amplitude/Filter) is handled in updateLFO globally
         }
 
         osc1.start(now);
         osc2.start(now);
         
-        this.activeNodes.set(note, { sources, adsrGain, osc1Settings, osc2Settings, rootNote: finalRootNote });
+        this.activeNodes.set(note, { 
+            sources, 
+            adsrGain, 
+            osc1Settings, 
+            osc2Settings, 
+            rootNote: finalRootNote,
+            startTime: now,
+            attackDuration: attack,
+            decayDuration: decay,
+            peakGain,
+            sustainGain
+        });
     }
 
-    const { attack, decay, sustain } = envelope;
-    const peakGain = 0.25;
     adsrGain.gain.linearRampToValueAtTime(peakGain, now + attack);
-    adsrGain.gain.linearRampToValueAtTime(sustain * peakGain, now + attack + decay);
+    adsrGain.gain.linearRampToValueAtTime(sustainGain, now + attack + decay);
 
     this.scheduleRetune();
   }
@@ -613,15 +623,42 @@ export class AudioEngine {
     const activeNode = this.activeNodes.get(note);
     if (!activeNode) return;
 
-    const { sources, adsrGain } = activeNode;
+    const { sources, adsrGain, startTime, attackDuration, decayDuration, peakGain, sustainGain } = activeNode;
     const now = time ?? this.audioContext.currentTime;
 
-    // Avoid abrupt cuts for active envelopes
-    adsrGain.gain.cancelScheduledValues(now);
-    const currentGain = adsrGain.gain.value;
-    // If no explicit time provided, set current value anchor. If future time, the anchor is the sustain value.
-    if (!time) adsrGain.gain.setValueAtTime(currentGain, now);
-    
+    // Use modern 'cancelAndHoldAtTime' for seamless click-free release if available
+    const gainParam = adsrGain.gain as any;
+    if (typeof gainParam.cancelAndHoldAtTime === 'function') {
+        try {
+            gainParam.cancelAndHoldAtTime(now);
+        } catch(e) {
+            // Fallback for edge cases (e.g. time is slightly in past)
+            gainParam.cancelScheduledValues(now);
+            gainParam.setValueAtTime(gainParam.value, now);
+        }
+    } else {
+        // --- MANUAL INTERRUPTION LOGIC (Fallback for older browsers) ---
+        let interruptGain = undefined;
+        
+        // Calculate where we are in the ADSR curve manually
+        if (now < startTime + attackDuration) {
+            const progress = Math.max(0, (now - startTime) / attackDuration);
+            interruptGain = peakGain * progress;
+        } else if (now < startTime + attackDuration + decayDuration) {
+            const decayProgress = (now - (startTime + attackDuration)) / decayDuration;
+            interruptGain = peakGain - (decayProgress * (peakGain - sustainGain));
+        }
+
+        adsrGain.gain.cancelScheduledValues(now);
+        
+        if (interruptGain !== undefined) {
+             adsrGain.gain.setValueAtTime(interruptGain, now);
+        } else {
+             // For sustain phase or if calculation fails, try to use current value
+             adsrGain.gain.setValueAtTime(adsrGain.gain.value, now);
+        }
+    }
+
     const effectiveRelease = Math.max(release, 0.01);
     adsrGain.gain.setTargetAtTime(0, now, effectiveRelease / 3); // Tighter exponential decay
 
