@@ -45,7 +45,7 @@ export interface ArpeggiatorSettings {
     gate: number; // 0.1 to 1.0 (note length relative to step)
 }
 
-export type PresetCategory = 'Simple' | 'Subtractive' | 'AM' | 'Sampling' | 'FM';
+export type PresetCategory = 'Simple' | 'Subtractive' | 'AM' | 'FM' | '808' | 'Sampling';
 
 export interface SynthPreset {
   name: string;

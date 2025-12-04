@@ -1,8 +1,10 @@
 
+
 import React, { useState } from 'react';
 import type { ChordMode } from '../types';
 import { ChevronDownIcon } from './icons';
 import { getDiatonicChordInfo } from '../services/musicTheory';
+import { Tooltip } from './Tooltip';
 
 interface ChordToolsPanelProps {
     autoChordsOn: boolean;
@@ -20,6 +22,7 @@ interface ChordToolsPanelProps {
     
     displayKeys: string[];
     preferFlats: boolean;
+    showTooltips: boolean;
 }
 
 const chordModes: { id: ChordMode; label: string }[] = [
@@ -78,7 +81,7 @@ export const ChordHelperPanel: React.FC<ChordToolsPanelProps> = ({
     autoChordsOn, onToggleAutoChords, chordMode, onModeChange, diatonicScale, onDiatonicScaleChange,
     chordHelperOn, onToggleChordHelper,
     selectedKey, onKeyChange,
-    displayKeys, preferFlats,
+    displayKeys, preferFlats, showTooltips
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'autoChords' | 'helper'>('autoChords');
@@ -112,23 +115,25 @@ export const ChordHelperPanel: React.FC<ChordToolsPanelProps> = ({
 
     return (
         <div className="w-full bg-synth-gray-900 shadow-2xl rounded-xl p-4 flex flex-col gap-4">
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex justify-between items-center w-full"
-                aria-expanded={isOpen}
-                aria-controls="chord-tools-content"
-            >
-                <h3 className="text-lg font-semibold text-white">Chord Tools</h3>
-                <div className="flex items-center gap-4">
-                    <div className="hidden sm:flex items-center gap-2 text-xs font-mono">
-                        <span className="w-3 h-3 rounded-full bg-blue-500"></span> I
-                        <span className="w-3 h-3 rounded-full bg-green-500"></span> IV
-                        <span className="w-3 h-3 rounded-full bg-yellow-500"></span> V
-                        <span className="w-3 h-3 rounded-full bg-purple-500"></span> vi
+            <Tooltip text="Explore chord theory, highlight notes on the keyboard, and enable automatic chord generation." show={showTooltips}>
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="flex justify-between items-center w-full"
+                    aria-expanded={isOpen}
+                    aria-controls="chord-tools-content"
+                >
+                    <h3 className="text-lg font-semibold text-white">Chord Tools</h3>
+                    <div className="flex items-center gap-4">
+                        <div className="hidden sm:flex items-center gap-2 text-xs font-mono">
+                            <span className="w-3 h-3 rounded-full bg-blue-500"></span> I
+                            <span className="w-3 h-3 rounded-full bg-green-500"></span> IV
+                            <span className="w-3 h-3 rounded-full bg-yellow-500"></span> V
+                            <span className="w-3 h-3 rounded-full bg-purple-500"></span> vi
+                        </div>
+                        <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
                     </div>
-                    <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-                </div>
-            </button>
+                </button>
+            </Tooltip>
             
             <div
                 id="chord-tools-content"

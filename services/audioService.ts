@@ -1,4 +1,11 @@
 
+
+
+
+
+
+
+
 import type { ADSREnvelope, OscillatorSettings, LoopEvent, SynthSettings, FilterSettings, DelaySettings, ReverbSettings, SaturationSettings, PhaserSettings, ChorusSettings, LFOSettings, LFOTarget, PresetCategory, SampleSettings, DrumType } from '../types';
 import { NOTE_FREQUENCIES, JUST_INTONATION_RATIOS, ALL_NOTES_CHROMATIC, DEFAULT_LFO_SETTINGS } from '../constants';
 
@@ -425,7 +432,8 @@ export class AudioEngine {
     time?: number, 
     rootNote?: string,
     category?: PresetCategory,
-    warpRatio: number = 1.0
+    warpRatio: number = 1.0,
+    presetName?: string
   ): void {
     if (this.audioContext.state === 'suspended') this.audioContext.resume();
 
@@ -524,13 +532,55 @@ export class AudioEngine {
 
         const osc1 = this.audioContext.createOscillator();
         osc1.type = osc1Settings.waveform;
-        osc1.frequency.setValueAtTime(freq1, now);
         osc1.detune.setValueAtTime(this.currentPitchBend + osc1Settings.detune, now);
 
         const osc2 = this.audioContext.createOscillator();
         osc2.type = osc2Settings.waveform;
-        osc2.frequency.setValueAtTime(freq2, now);
         osc2.detune.setValueAtTime(this.currentPitchBend + osc2Settings.detune, now);
+        
+        // --- 808 PITCH ENVELOPE (PUNCH) LOGIC ---
+        // Apply pitch envelope based on specific presets or generic 808 sine/tri detection.
+        // We filter out specific presets that shouldn't have punch.
+        
+        let punchFreqMultiplier = 1.0;
+        let punchDecay = 0.0;
+        
+        const is808 = category === '808';
+        
+        if (is808) {
+            // 1. Explicitly Reduced Punch
+            if (presetName === 'Classic 808 Bass' || presetName === '808 Deep Tom') {
+                punchFreqMultiplier = 2.0; // Reduced from 4.0 for softer thud
+                punchDecay = 0.01; // Fast decay
+            }
+            // 2. Explicitly Removed Punch
+            else if (['Trap 808', '808 Glide', '808 Tom Lead', 'Hard 808'].includes(presetName || '')) {
+                punchFreqMultiplier = 1.0; // No punch
+            }
+            // 3. 606 Bongo Specific Punch (Sharper than bass, mellower than kick)
+            else if (presetName === '606 Bongo') {
+                punchFreqMultiplier = 3.0;
+                punchDecay = 0.03;
+            }
+            // 4. Default/Catch-all Punch for other 808 sine/tri sounds (e.g., Shorty 808, 808 Bongo)
+            else if (osc1Settings.waveform === 'sine' || osc1Settings.waveform === 'triangle') {
+                 punchFreqMultiplier = 4.0; // Standard heavy punch
+                 punchDecay = 0.02;
+            }
+        }
+
+        if (punchFreqMultiplier > 1.0) {
+            // Apply Punch
+            osc1.frequency.setValueAtTime(freq1 * punchFreqMultiplier, now);
+            osc1.frequency.exponentialRampToValueAtTime(freq1, now + punchDecay);
+
+            osc2.frequency.setValueAtTime(freq2 * punchFreqMultiplier, now);
+            osc2.frequency.exponentialRampToValueAtTime(freq2, now + punchDecay);
+        } else {
+            // Standard Pitch
+            osc1.frequency.setValueAtTime(freq1, now);
+            osc2.frequency.setValueAtTime(freq2, now);
+        }
         
         const mix1Gain = this.audioContext.createGain();
         mix1Gain.gain.value = 1 - mix;

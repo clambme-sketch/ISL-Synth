@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Keyboard } from './components/Keyboard';
 import { Controls } from './components/Controls';
@@ -30,8 +31,9 @@ const THEMES: Record<PresetCategory, { primary: string; secondary: string }> = {
     'Simple': { primary: '0 255 255', secondary: '138 43 226' }, // Cyan / Purple
     'Subtractive': { primary: '255 165 0', secondary: '220 20 60' }, // Orange / Red
     'AM': { primary: '255 20 147', secondary: '75 0 130' }, // Deep Pink / Indigo
-    'Sampling': { primary: '16 185 129', secondary: '13 148 136' }, // Emerald / Teal
     'FM': { primary: '255 0 255', secondary: '255 215 0' }, // Magenta / Gold
+    '808': { primary: '255 182 193', secondary: '137 207 240' }, // Pastel Pink / Pastel Blue
+    'Sampling': { primary: '16 185 129', secondary: '13 148 136' }, // Emerald / Teal
 };
 
 const usePrevious = <T extends unknown>(value: T): T | undefined => {
@@ -212,7 +214,8 @@ const App: React.FC = () => {
           time, 
           note, 
           settings.activeCategory,
-          settings.warpRatio
+          settings.warpRatio,
+          settings.activePresetName
       );
 
       audioEngineRef.current.stopNote(note, settings.adsr.release, time + duration);
@@ -282,6 +285,7 @@ const App: React.FC = () => {
     musicKey,
     diatonicScale,
     activeCategory,
+    activePresetName,
     sampleVolume,
     arpSettings,
     warpRatio
@@ -300,6 +304,7 @@ const App: React.FC = () => {
       musicKey,
       diatonicScale,
       activeCategory,
+      activePresetName,
       sampleVolume,
       arpSettings,
       warpRatio
@@ -350,7 +355,18 @@ const App: React.FC = () => {
 
   const looperNoteOn = useCallback((note: string, time?: number) => {
     const settings = synthSettingsRef.current;
-    audioEngineRef.current?.playNote(note, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, time, undefined, settings.activeCategory, settings.warpRatio);
+    audioEngineRef.current?.playNote(
+        note, 
+        settings.adsr, 
+        settings.osc1, 
+        settings.osc2, 
+        settings.oscMix, 
+        time, 
+        undefined, 
+        settings.activeCategory, 
+        settings.warpRatio,
+        settings.activePresetName
+    );
   }, []);
 
   const looperNoteOff = useCallback((note: string, time?: number) => {
@@ -408,11 +424,11 @@ const App: React.FC = () => {
         activeChordsRef.current.set(note, chordNotes);
         setActiveChords(prev => new Map(prev).set(note, chordNotes));
         chordNotes.forEach(chordNote => {
-            audioEngineRef.current?.playNote(chordNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, finalRootNote, settings.activeCategory, settings.warpRatio);
+            audioEngineRef.current?.playNote(chordNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, finalRootNote, settings.activeCategory, settings.warpRatio, settings.activePresetName);
             looperRecordNoteOn(chordNote);
         });
     } else {
-        audioEngineRef.current.playNote(finalRootNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio);
+        audioEngineRef.current.playNote(finalRootNote, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio, settings.activePresetName);
         looperRecordNoteOn(finalRootNote);
     }
     
@@ -709,7 +725,7 @@ const App: React.FC = () => {
               
               if (!settings.arpSettings.on) {
                   notes.forEach(n => {
-                      audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio);
+                      audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio, settings.activePresetName);
                   });
               }
           }
@@ -750,7 +766,7 @@ const App: React.FC = () => {
           
           if (!settings.arpSettings.on) {
               notes.forEach(n => {
-                  audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio);
+                  audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio, settings.activePresetName);
               });
           }
       }
@@ -1227,6 +1243,7 @@ const App: React.FC = () => {
                 onKeyChange={setMusicKey}
                 displayKeys={displayKeys}
                 preferFlats={preferFlats}
+                showTooltips={showTooltips}
               />
           </div>
 

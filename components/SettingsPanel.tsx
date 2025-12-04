@@ -1,6 +1,8 @@
 
+
 import React, { useState } from 'react';
 import { ChevronDownIcon } from './icons';
+import { Tooltip } from './Tooltip';
 
 interface SettingsPanelProps {
     adaptiveTuning: boolean;
@@ -85,15 +87,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
     return (
         <div className="w-full bg-synth-gray-900 shadow-2xl rounded-xl p-4 flex flex-col gap-4">
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex justify-between items-center w-full"
-                aria-expanded={isOpen}
-                aria-controls="settings-content"
-            >
-                <h3 className="text-lg font-semibold text-white">Settings</h3>
-                <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
+            <Tooltip text="Configure MIDI devices, keyboard display options, and audio engine settings." show={showTooltips}>
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="flex justify-between items-center w-full"
+                    aria-expanded={isOpen}
+                    aria-controls="settings-content"
+                >
+                    <h3 className="text-lg font-semibold text-white">Settings</h3>
+                    <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+            </Tooltip>
 
             <div
                 id="settings-content"

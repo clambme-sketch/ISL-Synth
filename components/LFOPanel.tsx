@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import type { LFOSettings, WaveformType, LFOTarget } from '../types';
 import { ChevronDownIcon, WaveformIcon } from './icons';
 import { SliderControl } from './Knob';
+import { Tooltip } from './Tooltip';
 
 interface LFOPanelProps {
   settings: LFOSettings;
@@ -90,23 +91,26 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
   }
 
   return (
-    <div className="bg-synth-gray-800 p-4 rounded-lg">
-        <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="flex justify-between items-center w-full"
-            aria-expanded={isOpen}
-            aria-controls="lfo-content"
-        >
-            <h3 className="text-lg font-semibold text-white">LFO (Low-Frequency Oscillator)</h3>
-            <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-        </button>
+    <div className="bg-synth-gray-800 p-4 rounded-lg flex flex-col transition-all">
+        <Tooltip text="Modulate sound using a Low-Frequency Oscillator for effects like vibrato, tremolo, or filter sweeps." show={showTooltips}>
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="flex justify-between items-center w-full"
+                aria-expanded={isOpen}
+                aria-controls="lfo-content"
+            >
+                <h3 className="text-lg font-semibold text-white">LFO (Low-Frequency Oscillator)</h3>
+                <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+        </Tooltip>
+        
         <div
             id="lfo-content"
-            className={`transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[500px] opacity-100 overflow-visible pt-4 mt-4 border-t border-synth-gray-700/50' : 'max-h-0 opacity-0 overflow-hidden'}`}
+            className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
         >
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-4">
-                     <div className="flex items-center justify-between">
+            <div className="overflow-hidden min-h-0">
+                <div className="pt-4 border-t border-synth-gray-700/50 mt-4 pb-2">
+                    <div className="flex items-center justify-between pb-4 border-b border-synth-gray-700/50 mb-4">
                         <label htmlFor="lfo-toggle" className="text-sm text-synth-gray-500 cursor-pointer">Enable LFO</label>
                         <label className="relative cursor-pointer">
                             <input 
@@ -120,45 +124,41 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                             <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.on ? 'transform translate-x-6' : ''}`}></div>
                         </label>
                     </div>
-                     
-                    <div className="flex gap-4">
-                        <div className="flex flex-col gap-2 flex-1">
-                            <div className="flex items-center justify-between">
-                                <label htmlFor="lfo-retrigger-toggle" className="text-sm text-synth-gray-500 cursor-pointer">Retrigger</label>
-                                <label className="relative cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        id="lfo-retrigger-toggle"
-                                        className="sr-only" 
-                                        checked={settings.retrigger} 
-                                        onChange={(e) => handleToggle('retrigger')(e.target.checked)}
-                                    />
-                                    <div className={`block w-10 h-5 rounded-full transition-colors ${settings.retrigger ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${settings.retrigger ? 'transform translate-x-5' : ''}`}></div>
-                                </label>
+                    
+                    <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 transition-opacity duration-300 ${!settings.on ? 'opacity-40 pointer-events-none' : ''}`}>
+                        {/* --- LEFT COLUMN: CONFIG --- */}
+                        <div className="space-y-4">
+                            <div className="flex gap-4">
+                                <div className="flex-1 flex items-center justify-between bg-synth-gray-900/50 p-2 rounded-lg">
+                                    <label htmlFor="lfo-retrigger-toggle" className="text-sm text-synth-gray-400 cursor-pointer">Retrigger</label>
+                                    <label className="relative cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            id="lfo-retrigger-toggle"
+                                            className="sr-only" 
+                                            checked={settings.retrigger} 
+                                            onChange={(e) => handleToggle('retrigger')(e.target.checked)}
+                                        />
+                                        <div className={`block w-10 h-5 rounded-full transition-colors ${settings.retrigger ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
+                                        <div className={`dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${settings.retrigger ? 'transform translate-x-5' : ''}`}></div>
+                                    </label>
+                                </div>
+                                <div className="flex-1 flex items-center justify-between bg-synth-gray-900/50 p-2 rounded-lg">
+                                    <label htmlFor="lfo-keysync-toggle" className="text-sm text-synth-gray-400 cursor-pointer">Key Sync</label>
+                                    <label className="relative cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            id="lfo-keysync-toggle"
+                                            className="sr-only" 
+                                            checked={settings.keySync || false} 
+                                            onChange={(e) => handleToggle('keySync')(e.target.checked)}
+                                        />
+                                        <div className={`block w-10 h-5 rounded-full transition-colors ${settings.keySync ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
+                                        <div className={`dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${settings.keySync ? 'transform translate-x-5' : ''}`}></div>
+                                    </label>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div className="flex flex-col gap-2 flex-1">
-                            <div className="flex items-center justify-between">
-                                <label htmlFor="lfo-keysync-toggle" className="text-sm text-synth-gray-500 cursor-pointer">Key Sync (FM/AM)</label>
-                                <label className="relative cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        id="lfo-keysync-toggle"
-                                        className="sr-only" 
-                                        checked={settings.keySync || false} 
-                                        onChange={(e) => handleToggle('keySync')(e.target.checked)}
-                                    />
-                                    <div className={`block w-10 h-5 rounded-full transition-colors ${settings.keySync ? 'bg-synth-purple-500' : 'bg-synth-gray-700'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${settings.keySync ? 'transform translate-x-5' : ''}`}></div>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
 
-                    <div className={`transition-opacity duration-300 ${!settings.on ? 'opacity-40 pointer-events-none' : ''}`}>
-                        <div className="space-y-3">
                             <div>
                                 <label className="text-sm font-medium text-synth-gray-500 block mb-2">Waveform</label>
                                 <div className="grid grid-cols-2 gap-2">
@@ -166,43 +166,42 @@ export const LFOPanel: React.FC<LFOPanelProps> = ({ settings, onSettingsChange, 
                                     <label key={wave} className={`p-2 rounded-md cursor-pointer transition-colors flex items-center justify-center gap-2 ${settings.waveform === wave ? 'bg-synth-purple-500 text-white' : 'bg-synth-gray-700 hover:bg-synth-gray-600'}`}>
                                         <input type="radio" name="lfo-waveform" value={wave} checked={settings.waveform === wave} onChange={() => handleChange('waveform')(wave)} className="sr-only" />
                                         <WaveformIcon type={wave} className="w-6 h-4" />
-                                        <span>{wave}</span>
+                                        <span className="text-xs font-bold uppercase">{wave}</span>
                                     </label>
                                     ))}
                                 </div>
                             </div>
-                             <div>
+                                <div>
                                 <label className="text-sm font-medium text-synth-gray-500 block mb-2">Target</label>
                                 <RadioPill name="lfo-target" options={targets.map(t => ({ value: t.id, label: t.label }))} selectedValue={settings.target} onChange={handleChange('target')} />
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <div className={`transition-opacity duration-300 ${!settings.on ? 'opacity-40 pointer-events-none' : ''}`}>
-                    <div className="grid grid-cols-2 gap-4 h-40">
-                        <SliderControl 
-                            label={rateLabel} 
-                            value={settings.rate} 
-                            defaultValue={defaultRate}
-                            min={rateMin} 
-                            max={rateMax} 
-                            step={0.1} 
-                            onChange={handleSliderChange('rate')} 
-                            showTooltip={showTooltips} 
-                            tooltipText={rateTooltip}
-                        />
-                        <SliderControl 
-                            label="Depth" 
-                            value={settings.depth} 
-                            defaultValue={defaultDepth} 
-                            min={0} 
-                            max={1} 
-                            step={0.01} 
-                            onChange={handleSliderChange('depth')} 
-                            showTooltip={showTooltips} 
-                            tooltipText={depthTooltip} 
-                        />
+                        
+                        {/* --- RIGHT COLUMN: SLIDERS --- */}
+                        <div className="flex justify-around items-center h-full">
+                            <SliderControl 
+                                label={rateLabel} 
+                                value={settings.rate} 
+                                defaultValue={defaultRate}
+                                min={rateMin} 
+                                max={rateMax} 
+                                step={0.1} 
+                                onChange={handleSliderChange('rate')} 
+                                showTooltip={showTooltips} 
+                                tooltipText={rateTooltip}
+                            />
+                            <SliderControl 
+                                label="Depth" 
+                                value={settings.depth} 
+                                defaultValue={defaultDepth} 
+                                min={0} 
+                                max={1} 
+                                step={0.01} 
+                                onChange={handleSliderChange('depth')} 
+                                showTooltip={showTooltips} 
+                                tooltipText={depthTooltip} 
+                            />
+                        </div>
                     </div>
                 </div>
             </div>

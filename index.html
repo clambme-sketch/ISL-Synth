@@ -147,6 +147,22 @@
         input[type=number] {
           -moz-appearance: textfield;
         }
+
+        /* Custom scrollbar for horizontal tabs */
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #3D3D3D; /* synth-gray-600 */
+            border-radius: 20px;
+        }
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #3D3D3D transparent;
+        }
     </style>
   <script type="importmap">
 {

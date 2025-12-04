@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { ChevronDownIcon, PlayIcon, StopIcon, TrashIcon } from './icons';
 import type { SongMeasure, SongPattern } from '../types';
@@ -162,15 +163,17 @@ export const SongBuilderPanel: React.FC<SongBuilderPanelProps> = ({
 
     return (
         <div className="w-full bg-synth-gray-900 shadow-2xl rounded-xl p-4 flex flex-col gap-4">
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex justify-between items-center w-full"
-                aria-expanded={isOpen}
-                aria-controls="song-builder-content"
-            >
-                <h3 className="text-lg font-semibold text-white">Song Builder</h3>
-                <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
+            <Tooltip text="Create and arrange song patterns using a step-sequencer grid." show={showTooltips}>
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="flex justify-between items-center w-full"
+                    aria-expanded={isOpen}
+                    aria-controls="song-builder-content"
+                >
+                    <h3 className="text-lg font-semibold text-white">Song Builder</h3>
+                    <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+            </Tooltip>
 
             <div
                 id="song-builder-content"

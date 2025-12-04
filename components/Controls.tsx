@@ -1,3 +1,11 @@
+
+
+
+
+
+
+
+
 import React from 'react';
 import type { ADSREnvelope, OscillatorSettings, SynthPreset, PresetCategory } from '../types';
 import { Lissajous } from './Lissajous';
@@ -7,6 +15,7 @@ import { SYNTH_PRESETS } from '../constants';
 import { OscillatorSection } from './OscillatorSection';
 import { EnvelopeSection } from './EnvelopeSection';
 import { SampleSection } from './SampleSection';
+import { Tooltip } from './Tooltip';
 
 // --- PROPS INTERFACE ---
 interface ControlsProps {
@@ -37,6 +46,15 @@ interface ControlsProps {
   onSampleBpmChange?: (bpm: number) => void;
 }
 
+const categoryTooltips: Record<PresetCategory, string> = {
+    'Simple': "Basic waveforms with a single oscillator. Great for learning synthesis fundamentals.",
+    'Subtractive': "Classic synthesis. A rich waveform is shaped by subtracting frequencies with a filter.",
+    'AM': "Amplitude Modulation. Creates complex, metallic tones by modulating volume at high speed.",
+    'FM': "Frequency Modulation. Creates rich, complex tones by modulating pitch at high speed. Famous for E-Pianos and bells.",
+    '808': "Presets inspired by the legendary TR-808. Perfect for deep basslines and pitched percussion.",
+    'Sampling': "Load your own audio and play it like an instrument across the keyboard.",
+};
+
 export const Controls: React.FC<ControlsProps> = ({
   adsr, setAdsr,
   osc1, setOsc1,
@@ -56,12 +74,16 @@ export const Controls: React.FC<ControlsProps> = ({
   const isSamplingMode = activeCategory === 'Sampling';
 
   // Categorize presets
-  const categories: PresetCategory[] = ['Simple', 'Subtractive', 'AM', 'FM', 'Sampling'];
+  const categories: PresetCategory[] = ['Simple', 'Subtractive', 'AM', 'FM', '808', 'Sampling'];
   const presetsByCategory = React.useMemo(() => {
       const grouped: Record<PresetCategory, SynthPreset[]> = {
-          'Simple': [], 'Subtractive': [], 'AM': [], 'Sampling': [], 'FM': []
+          'Simple': [], 'Subtractive': [], 'AM': [], 'FM': [], '808': [], 'Sampling': []
       };
-      SYNTH_PRESETS.forEach(p => grouped[p.category].push(p));
+      SYNTH_PRESETS.forEach(p => {
+        if (grouped[p.category]) {
+          grouped[p.category].push(p)
+        }
+      });
       return grouped;
   }, []);
 
@@ -78,19 +100,20 @@ export const Controls: React.FC<ControlsProps> = ({
     <div className="flex flex-col gap-6 w-full">
       {/* --- PRESETS PANEL --- */}
       <div className="bg-synth-gray-800 p-4 rounded-lg space-y-4 shadow-lg border-t-2 border-[rgb(var(--accent-500))]">
-        <div className="flex flex-wrap gap-2 border-b border-synth-gray-700 pb-2 mb-2">
+        <div className="flex flex-nowrap gap-2 border-b border-synth-gray-700 pb-2 mb-2 overflow-x-auto custom-scrollbar">
             {categories.map(category => (
-                <button
-                    key={category}
-                    onClick={() => handleTabClick(category)}
-                    className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-all border-b-2 ${
-                        activeCategory === category 
-                        ? 'bg-[rgb(var(--accent-500))] text-synth-gray-900 border-[rgb(var(--secondary-500))] shadow-[0_0_15px_rgba(var(--accent-500),0.3)]' 
-                        : 'text-synth-gray-500 hover:text-white border-transparent hover:bg-synth-gray-700'
-                    }`}
-                >
-                    {category}
-                </button>
+                <Tooltip key={category} text={categoryTooltips[category]} show={showTooltips}>
+                    <button
+                        onClick={() => handleTabClick(category)}
+                        className={`flex-shrink-0 px-4 py-2 rounded-t-lg font-bold text-sm transition-all border-b-2 ${
+                            activeCategory === category 
+                            ? 'bg-[rgb(var(--accent-500))] text-synth-gray-900 border-[rgb(var(--secondary-500))] shadow-[0_0_15px_rgba(var(--accent-500),0.3)]' 
+                            : 'text-synth-gray-500 hover:text-white border-transparent hover:bg-synth-gray-700'
+                        }`}
+                    >
+                        {category}
+                    </button>
+                </Tooltip>
             ))}
         </div>
         

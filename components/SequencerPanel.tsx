@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronDownIcon, DownloadIcon, PlayIcon, RecordIcon, StopIcon, TrashIcon, PlusIcon } from './icons';
 import { LoopVisualizer } from './LoopVisualizer';
@@ -353,15 +354,17 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
 
   return (
     <div className="w-full bg-synth-gray-900 shadow-2xl rounded-xl p-4 flex flex-col gap-4">
-        <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="flex justify-between items-center w-full"
-            aria-expanded={isOpen}
-            aria-controls="sequencer-content"
-        >
-            <h3 className="text-lg font-semibold text-white">Metronome & Looper</h3>
-            <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-        </button>
+        <Tooltip text="Access the metronome, drum machine, and a live looper to record your performances." show={showTooltips}>
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="flex justify-between items-center w-full"
+                aria-expanded={isOpen}
+                aria-controls="sequencer-content"
+            >
+                <h3 className="text-lg font-semibold text-white">Metronome & Looper</h3>
+                <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+        </Tooltip>
 
          <div
             id="sequencer-content"

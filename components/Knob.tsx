@@ -26,7 +26,8 @@ export const SliderControl: React.FC<ControlProps> = ({ label, value, defaultVal
   
   return (
     <Tooltip show={showTooltip} text={tooltipText || defaultTooltipText}>
-        <div className="flex flex-col items-center justify-end gap-2 h-full" onDoubleClick={handleDoubleClick}>
+        <div className="flex flex-col items-center justify-end gap-2 w-full flex-shrink-0" onDoubleClick={handleDoubleClick}>
+          {/* Container must be relative and have explicit height to hold the rotated slider */}
           <div className="relative flex-grow w-full flex items-center justify-center min-h-[100px]">
             <input
               type="range"
@@ -35,7 +36,7 @@ export const SliderControl: React.FC<ControlProps> = ({ label, value, defaultVal
               step={step}
               value={value}
               onChange={(e) => onChange(parseFloat(e.target.value))}
-              className="slider-rotated"
+              className="slider-rotated block"
               aria-label={label}
               style={{
                   '--thumb-color': 'rgb(var(--accent-500))',

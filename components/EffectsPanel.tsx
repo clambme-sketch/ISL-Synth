@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import type { ReverbSettings, DelaySettings, FilterSettings, FilterType, SaturationSettings, PhaserSettings, ChorusSettings } from '../types';
 import { ChevronDownIcon } from './icons';
@@ -96,15 +97,17 @@ export const EffectsPanel: React.FC<EffectsPanelProps> = ({
     
     return (
         <div className="w-full bg-synth-gray-900 shadow-2xl rounded-xl p-4 flex flex-col gap-4">
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex justify-between items-center w-full"
-                aria-expanded={isOpen}
-                aria-controls="effects-content"
-            >
-                <h3 className="text-lg font-semibold text-white">Effects</h3>
-                <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
+            <Tooltip text="Add post-processing effects like reverb, delay, and distortion to shape your sound." show={showTooltips}>
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="flex justify-between items-center w-full"
+                    aria-expanded={isOpen}
+                    aria-controls="effects-content"
+                >
+                    <h3 className="text-lg font-semibold text-white">Effects</h3>
+                    <ChevronDownIcon className={`w-6 h-6 text-synth-gray-500 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+            </Tooltip>
 
             <div
                 id="effects-content"

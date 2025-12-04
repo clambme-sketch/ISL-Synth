@@ -1,4 +1,12 @@
 
+
+
+
+
+
+
+
+
 import type { SynthPreset, FilterSettings, ReverbSettings, DelaySettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, ArpeggiatorSettings } from './types';
 
 export const NOTE_FREQUENCIES: { [note: string]: number } = {
@@ -325,16 +333,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
   },
 
 
-  // --- Sampling - Init Preset ---
-  {
-    name: 'User Sample',
-    category: 'Sampling',
-    adsr: { attack: 0.01, decay: 0.1, sustain: 1.0, release: 0.1 },
-    osc1: { waveform: 'sine', detune: 0, octave: 0 },
-    osc2: { waveform: 'sine', detune: 0, octave: 0 },
-    mix: 0.0,
-  },
-
   // --- FM Synthesis (Linear Frequency Modulation) - 10 Presets ---
   {
     name: 'DX Keys',
@@ -448,5 +446,115 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     // Ratio 5.0 (2 octaves + major third ish harmonic series) keeps high shimmer in key
     lfo: { on: true, waveform: 'sine', rate: 5.0, depth: 0.5, target: 'pitch', retrigger: true, keySync: true },
     reverb: { on: true, mix: 0.6, decay: 4.0 },
+  },
+
+  // --- 808 Emulation (Revamped) - 10 Presets ---
+  {
+    name: 'Classic 808 Bass',
+    category: '808',
+    adsr: { attack: 0.001, decay: 0.4, sustain: 0.8, release: 0.17 }, // Release tighter
+    osc1: { waveform: 'sine', detune: 0, octave: -2 },
+    osc2: { waveform: 'sine', detune: 0, octave: -2 },
+    mix: 0.8,
+    filter: { on: true, type: 'lowpass', cutoff: 600, resonance: 2.0 },
+    saturation: { on: true, mix: 0.8, drive: 0.6 },
+  },
+  {
+    name: 'Trap 808',
+    category: '808',
+    adsr: { attack: 0.01, decay: 0.6, sustain: 0.5, release: 0.4 },
+    osc1: { waveform: 'sine', detune: 0, octave: -2 },
+    osc2: { waveform: 'square', detune: 0, octave: -2 },
+    mix: 0.1,
+    saturation: { on: true, mix: 0.8, drive: 0.8 },
+  },
+  {
+    name: 'Shorty 808',
+    category: '808',
+    adsr: { attack: 0.005, decay: 0.2, sustain: 0.0, release: 0.1 },
+    osc1: { waveform: 'sine', detune: 0, octave: -1 },
+    osc2: { waveform: 'triangle', detune: 0, octave: -1 }, // Added body
+    mix: 0.5,
+    saturation: { on: true, mix: 0.6, drive: 0.6 }, // Boosted
+  },
+  {
+    name: '808 Glide',
+    category: '808',
+    adsr: { attack: 0.05, decay: 1.0, sustain: 0.6, release: 0.22 }, // Release fixed to 0.22
+    osc1: { waveform: 'sine', detune: 0, octave: -2 },
+    osc2: { waveform: 'sine', detune: 4, octave: -2 },
+    mix: 0.5,
+    saturation: { on: true, mix: 0.6, drive: 0.7 }, // Boosted for volume
+  },
+  {
+    name: 'Hard 808', // Moved Up (Swapped with Cowbell)
+    category: '808',
+    adsr: { attack: 0.01, decay: 0.4, sustain: 0.6, release: 0.3 },
+    osc1: { waveform: 'sine', detune: 0, octave: -2 },
+    osc2: { waveform: 'square', detune: 0, octave: -2 },
+    mix: 0.3,
+    saturation: { on: true, mix: 1.0, drive: 0.9 }, // Heavy distortion
+    filter: { on: true, type: 'lowpass', cutoff: 1200, resonance: 2.0 }
+  },
+  {
+    name: '808 Tom Lead',
+    category: '808',
+    adsr: { attack: 0.01, decay: 0.4, sustain: 0.0, release: 0.3 },
+    osc1: { waveform: 'triangle', detune: 0, octave: 0 },
+    osc2: { waveform: 'triangle', detune: 0, octave: 0 },
+    mix: 0.0,
+    singleOscillator: true,
+    filter: { on: true, type: 'lowpass', cutoff: 3000, resonance: 1.0 },
+  },
+  {
+    name: '808 Cowbell', // Moved Down
+    category: '808',
+    adsr: { attack: 0.001, decay: 0.4, sustain: 0.0, release: 0.1 },
+    osc1: { waveform: 'square', detune: 0, octave: 1 },
+    osc2: { waveform: 'square', detune: 680, octave: 1 }, // ~680 cents is the classic 808 interval
+    mix: 0.5,
+    filter: { on: true, type: 'bandpass', cutoff: 1600, resonance: 4.0 }, // Bandpass is crucial
+    reverb: { ...DEFAULT_REVERB_SETTINGS, on: false },
+  },
+  {
+    name: '606 Bongo', // Renamed from 808 Bongo
+    category: '808',
+    adsr: { attack: 0.001, decay: 0.18, sustain: 0.0, release: 0.1 },
+    osc1: { waveform: 'sine', detune: 0, octave: 1 }, 
+    osc2: { waveform: 'triangle', detune: 5, octave: 1 }, // Triangle adds texture
+    mix: 0.4,
+    singleOscillator: false,
+    filter: { on: true, type: 'bandpass', cutoff: 450, resonance: 6.0 }, // Tubby 606 sound
+    saturation: { on: true, mix: 0.4, drive: 0.4 }, // Slight dirt
+  },
+  {
+    name: '808 Clave',
+    category: '808',
+    adsr: { attack: 0.001, decay: 0.08, sustain: 0.0, release: 0.05 },
+    osc1: { waveform: 'square', detune: 0, octave: 2 }, // High pitch
+    osc2: { waveform: 'square', detune: 0, octave: 2 },
+    mix: 0.0,
+    singleOscillator: true,
+    filter: { on: true, type: 'bandpass', cutoff: 2500, resonance: 8.0 }, // Sharp resonance
+  },
+  {
+    name: '808 Deep Tom',
+    category: '808',
+    adsr: { attack: 0.01, decay: 0.6, sustain: 0.0, release: 0.4 },
+    osc1: { waveform: 'sine', detune: 0, octave: -1 },
+    osc2: { waveform: 'sine', detune: 0, octave: -1 },
+    mix: 0.0,
+    singleOscillator: true,
+    filter: { on: true, type: 'lowpass', cutoff: 1200, resonance: 1.5 },
+  },
+
+  // --- Sampling - Init Preset ---
+  {
+    name: 'User Sample',
+    category: 'Sampling',
+    adsr: { attack: 0.01, decay: 0.1, sustain: 1.0, release: 0.1 },
+    osc1: { waveform: 'sine', detune: 0, octave: 0 },
+    osc2: { waveform: 'sine', detune: 0, octave: 0 },
+    mix: 0.0,
   },
 ];
