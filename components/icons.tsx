@@ -1,4 +1,6 @@
 
+
+
 import React from 'react';
 
 export const UploadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -35,6 +37,12 @@ export const StopIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 export const DownloadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+  </svg>
+);
+
+export const FloppyIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <path fillRule="evenodd" d="M19.5 21a1.5 1.5 0 001.5-1.5V6.75a1.5 1.5 0 00-1.5-1.5h-1.5V3a1.5 1.5 0 00-1.5-1.5H7.5a1.5 1.5 0 00-1.5 1.5v2.25H4.5a1.5 1.5 0 00-1.5 1.5v12.75a1.5 1.5 0 001.5 1.5h15zm-9-16.5v3h6v-3h-6zm-4.5 15v-6h12v6h-12z" clipRule="evenodd" />
   </svg>
 );
 

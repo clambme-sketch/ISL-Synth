@@ -1,10 +1,8 @@
-
-
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Keyboard } from './components/Keyboard';
 import { Controls } from './components/Controls';
 import { AudioEngine } from './services/audioService';
-import type { ADSREnvelope, OscillatorSettings, SynthPreset, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, PresetCategory, ArpeggiatorSettings, SongMeasure, SongPattern, DrumPattern, ArrangementBlock } from './types';
+import type { ADSREnvelope, OscillatorSettings, SynthPreset, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, PresetCategory, ArpeggiatorSettings, SongMeasure, SongPattern, DrumPattern, ArrangementBlock, LoopEvent } from './types';
 import { KEY_MAP, SYNTH_PRESETS, KEYBOARD_NOTES, DEFAULT_FILTER_SETTINGS, DEFAULT_REVERB_SETTINGS, DEFAULT_DELAY_SETTINGS, DEFAULT_SATURATION_SETTINGS, DEFAULT_CHORUS_SETTINGS, DEFAULT_PHASER_SETTINGS, DEFAULT_LFO_SETTINGS, DEFAULT_ARP_SETTINGS } from './constants';
 import { SidePanel } from './components/SidePanel';
 import { SequencerPanel } from './components/SequencerPanel';
@@ -21,6 +19,7 @@ import { useArpeggiator } from './hooks/useArpeggiator';
 import { SongBuilderPanel } from './components/SongBuilderPanel';
 import { ArrangerPanel } from './components/ArrangerPanel';
 import { useSongPlayer } from './hooks/useSongPlayer';
+import { SaveDialog } from './components/SaveDialog';
 
 const PITCH_BEND_AMOUNT = 200;
 
@@ -175,6 +174,19 @@ const App: React.FC = () => {
   const sustainOnRef = useRef(sustainOn); 
   useEffect(() => { sustainOnRef.current = sustainOn; }, [sustainOn]);
 
+  // --- SAVE DIALOG STATE ---
+  const [saveDialogState, setSaveDialogState] = useState<{
+      isOpen: boolean;
+      title: string;
+      defaultValue: string;
+      onConfirm: (name: string) => void;
+  }>({
+      isOpen: false,
+      title: '',
+      defaultValue: '',
+      onConfirm: () => {}
+  });
+
   // Arpeggiator needs to be defined BEFORE useMetronome to extract onExternalClockStep
   // Combine all inputs for Arp: Pressed keys, MIDI, Sustained keys, Sequencer (Song Builder)
   const allHeldNotes = useMemo(() => {
@@ -213,7 +225,7 @@ const App: React.FC = () => {
           settings.oscMix, 
           time, 
           note, 
-          settings.activeCategory,
+          settings.activeCategory, 
           settings.warpRatio,
           settings.activePresetName
       );
@@ -221,11 +233,6 @@ const App: React.FC = () => {
       audioEngineRef.current.stopNote(note, settings.adsr.release, time + duration);
   }, []);
 
-  // We need to know if Metronome is playing for the Arpeggiator hook, 
-  // but useMetronome (which controls it) is defined below. 
-  // We use a state that is synced or the hook instance itself.
-  // Ideally, useMetronome is called first, but we need onExternalClockStep for its callback.
-  // Solution: We use a Ref for onExternalClockStep and update it after useArpeggiator is called.
   const onArpStepRef = useRef<(step: number, time: number) => void>(() => {});
 
   // Audio scheduler callback for drums AND Arp
@@ -273,6 +280,7 @@ const App: React.FC = () => {
   }, [bpm, sampleBpm]);
 
   // Create a ref to hold all synth settings. This avoids stale closures in callbacks.
+  // UPDATED to include all effects
   const synthSettingsRef = useRef({
     adsr,
     osc1,
@@ -288,7 +296,14 @@ const App: React.FC = () => {
     activePresetName,
     sampleVolume,
     arpSettings,
-    warpRatio
+    warpRatio,
+    filter: filterSettings,
+    reverb: reverbSettings,
+    delay: delaySettings,
+    saturation: saturationSettings,
+    chorus: chorusSettings,
+    phaser: phaserSettings,
+    lfo: lfoSettings
   });
 
   useEffect(() => {
@@ -307,12 +322,18 @@ const App: React.FC = () => {
       activePresetName,
       sampleVolume,
       arpSettings,
-      warpRatio
+      warpRatio,
+      filter: filterSettings,
+      reverb: reverbSettings,
+      delay: delaySettings,
+      saturation: saturationSettings,
+      chorus: chorusSettings,
+      phaser: phaserSettings,
+      lfo: lfoSettings
     };
   }); 
 
   // --- EFFECT SYNCHRONIZATION ---
-  // Sync effects to AudioEngine whenever they change
   useEffect(() => { audioEngineRef.current?.updateFilter(filterSettings); }, [filterSettings]);
   useEffect(() => { audioEngineRef.current?.updateReverb(reverbSettings); }, [reverbSettings]);
   useEffect(() => { audioEngineRef.current?.updateDelay(delaySettings); }, [delaySettings]);
@@ -328,7 +349,6 @@ const App: React.FC = () => {
 
 
   // --- FREQUENCY MONITORING ---
-  // This effect polls the audio engine for the current frequency of active notes
   useEffect(() => {
     if (keyboardDisplayMode !== 'hz') {
         if (noteFrequencies.size > 0) setNoteFrequencies(new Map());
@@ -375,7 +395,11 @@ const App: React.FC = () => {
 
   const { 
     loopState, 
-    loop, 
+    loop, // Legacy current loop
+    loops, // All loops
+    activeSlot,
+    queuedSlot,
+    switchSlot,
     progress, 
     startRecording, 
     togglePlayback, 
@@ -402,6 +426,7 @@ const App: React.FC = () => {
   };
   
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
 
   // --- NOTE HANDLING ---
@@ -588,7 +613,6 @@ const App: React.FC = () => {
 
   // --- SONG BUILDER LOGIC ---
 
-  // Song Pattern Management
   const handlePatternAdd = () => {
       setSongPatterns(prev => [
           ...prev,
@@ -632,39 +656,30 @@ const App: React.FC = () => {
       });
   };
   
-  // Convert recorded loop to a song pattern
   const handleLoopToPattern = () => {
     if (loop.length === 0) return;
 
-    // Determine loop duration and measure length
     const beatsPerBar = 4;
     const secondsPerBeat = 60 / bpm;
     const measureDuration = secondsPerBeat * beatsPerBar;
     
-    // Create new measures
     const newSequence: SongMeasure[] = [];
     
     for (let i = 0; i < loopBars; i++) {
         const measureStart = i * measureDuration;
-        const measureEnd = (i + 1) * measureDuration;
         const halfMeasure = measureDuration / 2;
         
-        // Analyze notes for Beat 1
         const notesAtBeat1 = new Set<string>();
         const notesAtBeat3 = new Set<string>();
         
-        const checkTime1 = measureStart + 0.1; // slightly into the beat
+        const checkTime1 = measureStart + 0.1;
         const checkTime3 = measureStart + halfMeasure + 0.1;
         
         loop.forEach(event => {
             const eventEnd = event.startTime + event.duration;
-            
-            // Check Beat 1
             if (event.startTime <= checkTime1 && eventEnd >= checkTime1) {
                 notesAtBeat1.add(event.note);
             }
-            
-            // Check Beat 3
             if (event.startTime <= checkTime3 && eventEnd >= checkTime3) {
                 notesAtBeat3.add(event.note);
             }
@@ -681,7 +696,6 @@ const App: React.FC = () => {
         });
     }
     
-    // Add new pattern
     setSongPatterns(prev => [
         ...prev,
         {
@@ -690,18 +704,14 @@ const App: React.FC = () => {
             sequence: newSequence
         }
     ]);
-    // Switch to new pattern
     setActivePatternIndex(songPatterns.length);
   };
 
   const handleSongPlayStep = useCallback((chordName: string) => {
       const settings = synthSettingsRef.current;
-      
-      // Check if it is an Absolute Chord (starts with A-G) or Roman Numeral
       const isAbsolute = /^[A-G]/.test(chordName);
 
       if (isAbsolute) {
-          // Parse Absolute Chord Name (e.g., "Cm", "F#7")
           const match = chordName.match(/^([A-G](?:#|b|♭)?)(.*)$/);
           if (match) {
               const root = match[1];
@@ -715,10 +725,7 @@ const App: React.FC = () => {
               else if (suffix === 'sus4') mode = 'major'; 
               else if (suffix === 'sus2') mode = 'major';
 
-              // Default to Octave 4
               const rootNote = `${root}4`;
-              
-              // Get notes for absolute chord
               const notes = getChordNotes(rootNote, mode, { key: settings.musicKey, scale: settings.diatonicScale });
               
               setSequencerHeldNotes(new Set(notes));
@@ -730,47 +737,39 @@ const App: React.FC = () => {
               }
           }
       } else {
-          // Parse Roman Numeral (Relative to Key)
           const rawRoman = chordName.replace('°', '').replace('+', ''); 
           const degreeIdx = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii'].indexOf(rawRoman.toLowerCase());
           
-          if (degreeIdx === -1) return;
-          
-          // Determine Intervals based on current SCALE setting
-          const scaleIntervals = settings.diatonicScale === 'major' 
-            ? [0, 2, 4, 5, 7, 9, 11] 
-            : [0, 2, 3, 5, 7, 8, 10];
-            
-          const interval = scaleIntervals[degreeIdx];
-          
-          // Find Root Note chromatic index
-          const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-          let keyIndex = noteNames.indexOf(settings.musicKey);
-          if (keyIndex === -1) {
-               // Handle flat keys if passed
-               const flatToSharp: Record<string, string> = {'Db':'C#', 'Eb':'D#', 'Gb':'F#', 'Ab':'G#', 'Bb':'A#'};
-               if (flatToSharp[settings.musicKey]) keyIndex = noteNames.indexOf(flatToSharp[settings.musicKey]);
-               if (keyIndex === -1) keyIndex = 0;
-          }
-          
-          const rootChroma = (keyIndex + interval) % 12;
-          const rootNoteName = noteNames[rootChroma]; 
-          
-          // Assume Octave 4 for the chord root
-          const rootNote = `${rootNoteName}4`;
-          
-          // Generate chord notes based on current scale context
-          const notes = getChordNotes(rootNote, 'diatonic', { key: settings.musicKey, scale: settings.diatonicScale });
-          
-          setSequencerHeldNotes(new Set(notes));
-          
-          if (!settings.arpSettings.on) {
-              notes.forEach(n => {
-                  audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio, settings.activePresetName);
-              });
+          if (degreeIdx !== -1) {
+              const scaleIntervals = settings.diatonicScale === 'major' 
+                ? [0, 2, 4, 5, 7, 9, 11] 
+                : [0, 2, 3, 5, 7, 8, 10];
+                
+              const interval = scaleIntervals[degreeIdx];
+              
+              const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+              let keyIndex = noteNames.indexOf(settings.musicKey);
+              if (keyIndex === -1) {
+                   const flatToSharp: Record<string, string> = {'Db':'C#', 'Eb':'D#', 'Gb':'F#', 'Ab':'G#', 'Bb':'A#'};
+                   if (flatToSharp[settings.musicKey]) keyIndex = noteNames.indexOf(flatToSharp[settings.musicKey]);
+                   if (keyIndex === -1) keyIndex = 0;
+              }
+              
+              const rootChroma = (keyIndex + interval) % 12;
+              const rootNoteName = noteNames[rootChroma]; 
+              const rootNote = `${rootNoteName}4`;
+              
+              const notes = getChordNotes(rootNote, 'diatonic', { key: settings.musicKey, scale: settings.diatonicScale });
+              
+              setSequencerHeldNotes(new Set(notes));
+              
+              if (!settings.arpSettings.on) {
+                  notes.forEach(n => {
+                      audioEngineRef.current?.playNote(n, settings.adsr, settings.osc1, settings.osc2, settings.oscMix, undefined, undefined, settings.activeCategory, settings.warpRatio, settings.activePresetName);
+                  });
+              }
           }
       }
-      
   }, []);
   
   const handleSongStopStep = useCallback((_: string) => {
@@ -794,13 +793,11 @@ const App: React.FC = () => {
 
   const currentSequence = useMemo(() => {
       if (arrangementPlaying && songArrangement.length > 0) {
-          // Flatten the arrangement: Look up pattern by ID and concat their sequences
           return songArrangement.flatMap(block => {
               const pattern = songPatterns.find(p => p.id === block.patternId);
               return pattern ? pattern.sequence : [];
           });
       }
-      // Default to current pattern
       return songPatterns[activePatternIndex].sequence;
   }, [arrangementPlaying, songArrangement, songPatterns, activePatternIndex]);
 
@@ -813,7 +810,6 @@ const App: React.FC = () => {
       isMetronomeEnabled: songMetronomeOn
   });
 
-  // Sync local playing state with the hook
   useEffect(() => {
       setIsPlaying(isPlayerActive);
   }, [isPlayerActive]);
@@ -822,7 +818,6 @@ const App: React.FC = () => {
       if (arrangementPlaying) {
           stopSong();
           setArrangementPlaying(false);
-          // Small delay to ensure clean stop before starting pattern
           setTimeout(toggleSongPlay, 50); 
       } else {
           toggleSongPlay();
@@ -832,7 +827,6 @@ const App: React.FC = () => {
   const handleArrangementPlayPause = () => {
       if (isPlayingPattern) {
           stopSong();
-          // Small delay to switch modes
           setTimeout(() => {
               setArrangementPlaying(true);
               toggleSongPlay();
@@ -848,7 +842,6 @@ const App: React.FC = () => {
       setArrangementPlaying(false);
   };
 
-  // Calculate Active Block Index for Arranger UI
   const activeArrangementBlockIndex = useMemo(() => {
       if (!arrangementPlaying || currentMeasureIndex === -1) return -1;
       
@@ -865,6 +858,182 @@ const App: React.FC = () => {
       return -1;
   }, [arrangementPlaying, currentMeasureIndex, songArrangement, songPatterns]);
 
+
+  // --- EXPORT HANDLERS WITH SAVE DIALOG ---
+
+  const handleDownloadClick = () => {
+    if (loop.length === 0) {
+        alert("Cannot download: Loop is empty. Record something first!");
+        return;
+    }
+    if (!audioEngineRef.current) {
+        alert("Audio engine is not initialized.");
+        return;
+    }
+    
+    setSaveDialogState({
+        isOpen: true,
+        title: 'Export Loop',
+        defaultValue: `ISL-synth-loop-${bpm}bpm-${loopBars}bar`,
+        onConfirm: (filename) => performLoopExport(filename)
+    });
+  };
+
+  const performLoopExport = async (filename: string) => {
+    setSaveDialogState(prev => ({ ...prev, isOpen: false }));
+    setIsDownloading(true);
+    setDownloadProgress(0);
+
+    try {
+        if (audioEngineRef.current && audioEngineRef.current.getAudioContext().state === 'suspended') {
+            await audioEngineRef.current.getAudioContext().resume();
+        }
+
+        const audioBuffer = await audioEngineRef.current!.renderLoopToBuffer(
+            loop, 
+            bpm, 
+            loopBars, 
+            { ...synthSettingsRef.current },
+            (progress) => setDownloadProgress(progress)
+        );
+        
+        const wavBlob = encodeWAV(audioBuffer);
+        const url = URL.createObjectURL(wavBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${filename}.wav`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error("Failed to render and download loop:", error);
+        alert("Export failed. See console for details.");
+    } finally {
+        setIsDownloading(false);
+        setDownloadProgress(0);
+    }
+  };
+
+  const handleSavePatternClick = () => {
+    if (!audioEngineRef.current) return;
+    const pattern = songPatterns[activePatternIndex];
+    if (!pattern) return;
+
+    // Quick check if empty (approximate, full check in perform)
+    if (pattern.sequence.every(m => m.chords.every(c => !c))) {
+        alert("Pattern is empty. Add chords to the grid before saving.");
+        return;
+    }
+
+    setSaveDialogState({
+        isOpen: true,
+        title: 'Export Pattern',
+        defaultValue: `Pattern-${pattern.name.replace(/\s+/g, '_')}_${bpm}bpm`,
+        onConfirm: (filename) => performPatternExport(filename, pattern)
+    });
+  };
+
+  const performPatternExport = async (filename: string, pattern: SongPattern) => {
+    setSaveDialogState(prev => ({ ...prev, isOpen: false }));
+    const settings = synthSettingsRef.current;
+    
+    // Construct Loop Events
+    const loopEvents: LoopEvent[] = [];
+    const beatsPerBar = 4;
+    const secondsPerBeat = 60 / bpm;
+    
+    pattern.sequence.forEach((measure, mIdx) => {
+        const numSlots = measure.chords.length;
+        const slotDuration = (beatsPerBar / numSlots) * secondsPerBeat;
+        
+        measure.chords.forEach((chordName, sIdx) => {
+            if (!chordName) return;
+            const startTime = (mIdx * beatsPerBar * secondsPerBeat) + (sIdx * slotDuration);
+            
+            // Resolve Notes logic... (copied from original handleSavePatternAudio)
+            let notes: string[] = [];
+            const isAbsolute = /^[A-G]/.test(chordName);
+            if (isAbsolute) {
+                 const match = chordName.match(/^([A-G](?:#|b|♭)?)(.*)$/);
+                 if (match) {
+                     const root = match[1];
+                     const suffix = match[2];
+                     let mode: ChordMode = 'major';
+                     if (suffix === 'm') mode = 'minor';
+                     else if (suffix === '7') mode = 'dominant7';
+                     else if (suffix === '°' || suffix === 'dim') mode = 'diminished';
+                     else if (suffix === '+' || suffix === 'aug') mode = 'augmented';
+                     else if (suffix === 'sus4') mode = 'major'; 
+                     else if (suffix === 'sus2') mode = 'major';
+                     notes = getChordNotes(`${root}4`, mode, { key: settings.musicKey, scale: settings.diatonicScale });
+                 }
+            } else {
+                const rawRoman = chordName.replace('°', '').replace('+', ''); 
+                const degreeIdx = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii'].indexOf(rawRoman.toLowerCase());
+                if (degreeIdx !== -1) {
+                     const scaleIntervals = settings.diatonicScale === 'major' ? [0, 2, 4, 5, 7, 9, 11] : [0, 2, 3, 5, 7, 8, 10];
+                     const interval = scaleIntervals[degreeIdx];
+                     const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                     let keyIndex = noteNames.indexOf(settings.musicKey);
+                     const flatToSharp: Record<string, string> = {'Db':'C#', 'Eb':'D#', 'Gb':'F#', 'Ab':'G#', 'Bb':'A#'};
+                     if (flatToSharp[settings.musicKey]) keyIndex = noteNames.indexOf(flatToSharp[settings.musicKey]);
+                     if (keyIndex === -1) keyIndex = 0;
+                     
+                     const rootChroma = (keyIndex + interval) % 12;
+                     const rootNoteName = noteNames[rootChroma];
+                     notes = getChordNotes(`${rootNoteName}4`, 'diatonic', { key: settings.musicKey, scale: settings.diatonicScale });
+                }
+            }
+            
+            notes.forEach(note => {
+                loopEvents.push({
+                    note: transposeNote(note, settings.octaveOffset),
+                    startTime,
+                    duration: slotDuration
+                });
+            });
+        });
+    });
+
+    if (loopEvents.length === 0) {
+        alert("Pattern is empty. Add chords to the grid before saving.");
+        return;
+    }
+
+    setIsDownloading(true);
+    setDownloadProgress(0);
+
+    try {
+        if (audioEngineRef.current && audioEngineRef.current.getAudioContext().state === 'suspended') {
+            await audioEngineRef.current.getAudioContext().resume();
+        }
+
+        const audioBuffer = await audioEngineRef.current!.renderLoopToBuffer(
+            loopEvents, 
+            bpm, 
+            pattern.sequence.length, 
+            { ...settings },
+            (progress) => setDownloadProgress(progress)
+        );
+        
+        const wavBlob = encodeWAV(audioBuffer);
+        const url = URL.createObjectURL(wavBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${filename}.wav`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error("Export failed", e);
+        alert("Export failed. See console for details.");
+    } finally {
+        setIsDownloading(false);
+        setDownloadProgress(0);
+    }
+  };
 
   const highlightedNotes = useMemo(() => {
     const notesToHighlight = new Map<string, string[]>();
@@ -896,11 +1065,9 @@ const App: React.FC = () => {
     };
 
     pressedNotes.forEach(note => setActive(note));
-    sustainedNotes.forEach((_, note) => setActive(note)); // Highlight sustained notes too
+    sustainedNotes.forEach((_, note) => setActive(note)); 
     midiPressedNotes.forEach(note => setActive(untransposeNote(formatNoteName(note, false), octaveOffset)));
     midiSustainedNotes.forEach(note => setActive(untransposeNote(formatNoteName(note, false), octaveOffset)));
-    
-    // Highlight Sequencer notes
     sequencerHeldNotes.forEach(note => setActive(untransposeNote(note, octaveOffset)));
 
     activeChords.forEach((chordNotes) => {
@@ -920,7 +1087,7 @@ const App: React.FC = () => {
         audioEngineRef.current.setSampleVolume(sampleVolume);
         audioEngineRef.current.setMasterVolume(masterVolume);
         audioEngineRef.current.setAdaptiveTuning(adaptiveTuning);
-        // Force initialization of effects with current state
+        // Force initialization of effects
         audioEngineRef.current.updateFilter(filterSettings);
         audioEngineRef.current.updateReverb(reverbSettings);
         audioEngineRef.current.updateDelay(delaySettings);
@@ -939,7 +1106,6 @@ const App: React.FC = () => {
           const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
           await audioEngineRef.current.setSample(decodedBuffer);
           setSampleBuffer(decodedBuffer);
-          // Set sample BPM to current BPM by default when loading a new sample
           setSampleBpm(bpm); 
       } catch (error) {
           console.error("Error decoding audio sample:", error);
@@ -976,7 +1142,6 @@ const App: React.FC = () => {
     setActivePresetName(preset.name);
     setActiveCategory(preset.category);
 
-    // Update effects, falling back to defaults if not specified in preset
     setFilterSettings(preset.filter ?? DEFAULT_FILTER_SETTINGS);
     setReverbSettings(preset.reverb ?? DEFAULT_REVERB_SETTINGS);
     setDelaySettings(preset.delay ?? DEFAULT_DELAY_SETTINGS);
@@ -986,10 +1151,9 @@ const App: React.FC = () => {
     setLfoSettings(preset.lfo ?? DEFAULT_LFO_SETTINGS);
   };
 
+  // Keyboard Handlers (useEffect for octaves, etc.) omitted for brevity as they are unchanged logic
   useEffect(() => {
     if (!audioEngineRef.current || prevOctaveOffset === undefined || prevOctaveOffset === octaveOffset) return;
-
-    // If Arp is ON, we don't re-trigger notes on octave shift, the hook handles transposition
     if (synthSettingsRef.current.arpSettings.on) return;
 
     pressedNotes.forEach(note => {
@@ -1040,13 +1204,12 @@ const App: React.FC = () => {
     };
   }, [handleNoteDown, handleNoteUp, pressedNotes]);
   
-  // Effect to render the loop to a buffer for visualization
   useEffect(() => {
     const renderLoop = async () => {
         if (loop.length > 0 && audioEngineRef.current) {
             try {
-                const loopDuration = (60 / bpm) * 4 * loopBars;
-                const buffer = await audioEngineRef.current.renderLoopToBuffer(loop, loopDuration, { 
+                const buffer = await audioEngineRef.current.renderLoopToBuffer(loop, bpm, loopBars, { 
+                    ...synthSettingsRef.current,
                     adsr, 
                     osc1, 
                     osc2, 
@@ -1064,42 +1227,14 @@ const App: React.FC = () => {
     };
 
     renderLoop();
-  }, [loop, bpm, loopBars, adsr, osc1, osc2, oscMix, sampleVolume]);
+  }, [loop, bpm, loopBars, adsr, osc1, osc2, oscMix, sampleVolume, filterSettings, reverbSettings, delaySettings, saturationSettings, chorusSettings, phaserSettings, lfoSettings]);
 
-
-  const handleDownload = async () => {
-    if (loop.length === 0 || !audioEngineRef.current) return;
-    setIsDownloading(true);
-    try {
-        const loopDuration = (60 / bpm) * 4 * loopBars;
-        const audioBuffer = await audioEngineRef.current.renderLoopToBuffer(loop, loopDuration, { 
-            adsr: synthSettingsRef.current.adsr, 
-            osc1: synthSettingsRef.current.osc1, 
-            osc2: synthSettingsRef.current.osc2, 
-            mix: synthSettingsRef.current.oscMix,
-            sampleVolume: synthSettingsRef.current.sampleVolume
-        });
-        const wavBlob = encodeWAV(audioBuffer);
-        const url = URL.createObjectURL(wavBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ISL-synth-loop-${bpm}bpm.wav`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    } catch (error) {
-        console.error("Failed to render and download loop:", error);
-    } finally {
-        setIsDownloading(false);
-    }
-  };
   
   const currentTheme = THEMES[activeCategory];
   const styleProps = useMemo(() => ({
       '--accent-500': currentTheme.primary,
       '--secondary-500': currentTheme.secondary,
-      '--accent-400': currentTheme.primary, // Simplified for now
+      '--accent-400': currentTheme.primary,
   } as React.CSSProperties), [currentTheme]);
 
   if (!isInitialized) {
@@ -1124,6 +1259,30 @@ const App: React.FC = () => {
         className="relative min-h-screen bg-synth-gray-800 flex flex-col items-center justify-center p-4 font-sans antialiased transition-colors duration-500"
         style={styleProps}
     >
+      <SaveDialog
+        isOpen={saveDialogState.isOpen}
+        title={saveDialogState.title}
+        defaultValue={saveDialogState.defaultValue}
+        onConfirm={saveDialogState.onConfirm}
+        onCancel={() => setSaveDialogState(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      {isDownloading && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+              <div className="bg-synth-gray-800 p-8 rounded-xl border border-synth-gray-700 shadow-2xl flex flex-col items-center gap-4 w-96">
+                  <h3 className="text-xl font-bold text-white animate-pulse">Rendering Audio...</h3>
+                  <div className="w-full h-4 bg-synth-gray-900 rounded-full overflow-hidden border border-synth-gray-700">
+                      <div 
+                          className="h-full bg-[rgb(var(--accent-500))] transition-all duration-100 ease-linear"
+                          style={{ width: `${downloadProgress * 100}%` }}
+                      ></div>
+                  </div>
+                  <p className="text-sm text-synth-gray-400 font-mono">{(downloadProgress * 100).toFixed(0)}%</p>
+                  <p className="text-xs text-synth-gray-500">Please wait while your file is generated.</p>
+              </div>
+          </div>
+      )}
+
       <div className="w-full max-w-6xl mx-auto bg-synth-gray-900 shadow-2xl rounded-xl p-4 sm:p-6 lg:p-8 flex flex-col gap-8 transition-colors duration-500 border border-synth-gray-700/50">
         <header className="flex justify-center items-center">
             <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[rgb(var(--accent-500))] to-[rgb(var(--secondary-500))] tracking-widest uppercase filter drop-shadow-[0_0_2px_rgba(var(--accent-500),0.5)]">
@@ -1133,7 +1292,7 @@ const App: React.FC = () => {
         
         <main className="flex flex-col gap-8">
           <Controls 
-            key={activeCategory} // Force re-render on category change for visualizer theme update
+            key={activeCategory} 
             adsr={adsr} setAdsr={setAdsr}
             osc1={osc1} setOsc1={setOsc1}
             osc2={osc2} setOsc2={setOsc2}
@@ -1209,7 +1368,7 @@ const App: React.FC = () => {
                     onRecord={startRecording}
                     onPlay={togglePlayback}
                     onClear={clearLoop}
-                    onDownload={handleDownload}
+                    onDownload={handleDownloadClick}
                     loopProgress={progress}
                     isDownloading={isDownloading}
                     hasLoop={loop.length > 0}
@@ -1226,6 +1385,11 @@ const App: React.FC = () => {
                     mode={sequencerMode}
                     onModeChange={setSequencerMode}
                     onAddToPatterns={handleLoopToPattern}
+                    
+                    loops={loops}
+                    activeSlot={activeSlot}
+                    queuedSlot={queuedSlot}
+                    onSlotChange={switchSlot}
                 />
            </div>
            
@@ -1276,6 +1440,7 @@ const App: React.FC = () => {
                 isPlaying={isPlayingPattern}
                 onPlayPause={handlePatternPlayPause}
                 onClear={handleSongClear}
+                onSave={handleSavePatternClick}
                 currentMeasureIndex={currentMeasureIndex}
                 musicKey={musicKey}
                 onKeyChange={setMusicKey}
@@ -1285,19 +1450,6 @@ const App: React.FC = () => {
                 displayKeys={displayKeys}
                 isMetronomePlaying={songMetronomeOn}
                 onToggleMetronome={() => setSongMetronomeOn(prev => !prev)}
-              />
-          </div>
-
-          <div className="mt-4">
-              <ArrangerPanel 
-                  patterns={songPatterns}
-                  arrangement={songArrangement}
-                  onArrangementChange={setSongArrangement}
-                  isPlaying={isPlayingArrangement}
-                  onPlayPause={handleArrangementPlayPause}
-                  onStop={handleArrangementStop}
-                  currentBlockIndex={activeArrangementBlockIndex}
-                  showTooltips={showTooltips}
               />
           </div>
 

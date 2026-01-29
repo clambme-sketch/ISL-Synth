@@ -1,7 +1,11 @@
 
 
+
+
+
+
 import React, { useState } from 'react';
-import { ChevronDownIcon, PlayIcon, StopIcon, TrashIcon } from './icons';
+import { ChevronDownIcon, PlayIcon, StopIcon, TrashIcon, FloppyIcon } from './icons';
 import type { SongMeasure, SongPattern } from '../types';
 import { Tooltip } from './Tooltip';
 
@@ -15,6 +19,7 @@ interface SongBuilderPanelProps {
     isPlaying: boolean;
     onPlayPause: () => void;
     onClear: () => void;
+    onSave: () => void;
     currentMeasureIndex: number;
     musicKey: string;
     onKeyChange: (key: string) => void;
@@ -43,6 +48,7 @@ export const SongBuilderPanel: React.FC<SongBuilderPanelProps> = ({
     isPlaying,
     onPlayPause,
     onClear,
+    onSave,
     currentMeasureIndex,
     musicKey,
     onKeyChange,
@@ -250,6 +256,15 @@ export const SongBuilderPanel: React.FC<SongBuilderPanelProps> = ({
                                     className="w-10 h-10 flex items-center justify-center rounded-full bg-synth-gray-700 hover:bg-synth-gray-600 text-gray-400 hover:text-white disabled:opacity-50"
                                 >
                                     <TrashIcon className="w-5 h-5" />
+                                </button>
+                            </Tooltip>
+
+                            <Tooltip text="Save Pattern as WAV" show={showTooltips}>
+                                <button
+                                    onClick={onSave}
+                                    className="w-10 h-10 flex items-center justify-center rounded-full bg-synth-gray-700 hover:bg-synth-gray-600 text-gray-400 hover:text-white"
+                                >
+                                    <FloppyIcon className="w-5 h-5" />
                                 </button>
                             </Tooltip>
                         </div>

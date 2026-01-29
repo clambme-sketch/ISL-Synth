@@ -27,6 +27,7 @@ export const LoopVisualizer: React.FC<LoopVisualizerProps> = ({ audioBuffer, pro
     }
 
     const data = audioBuffer.getChannelData(0); // Use the first channel
+    // Optimize: Reduce points to canvas width
     const step = Math.ceil(data.length / CANVAS_WIDTH);
     const points = [];
 
@@ -34,11 +35,17 @@ export const LoopVisualizer: React.FC<LoopVisualizerProps> = ({ audioBuffer, pro
       let min = 1.0;
       let max = -1.0;
       const start = i * step;
+      // Sampling
       for (let j = 0; j < step; j++) {
+        if (start + j >= data.length) break;
         const datum = data[start + j];
         if (datum < min) min = datum;
         if (datum > max) max = datum;
       }
+      // Fallback if loop didn't run
+      if (min === 1.0) min = 0;
+      if (max === -1.0) max = 0;
+      
       points.push({ min, max });
     }
     waveformDataRef.current = points;
@@ -63,24 +70,28 @@ export const LoopVisualizer: React.FC<LoopVisualizerProps> = ({ audioBuffer, pro
 
       // Draw the waveform if data is available
       if (waveform.length > 0) {
+        const centerY = CANVAS_HEIGHT / 2;
         const amp = CANVAS_HEIGHT / 2;
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#00FFFF'; // synth-cyan-500
-
+        
+        ctx.fillStyle = '#00FFFF'; // synth-cyan-500
+        
+        // Draw centered waveform blocks
         ctx.beginPath();
         for (let i = 0; i < waveform.length; i++) {
           const { min, max } = waveform[i];
-          // Draw a vertical line representing the min/max amplitude for this segment
-          ctx.moveTo(i + 0.5, (1 + min) * amp);
-          ctx.lineTo(i + 0.5, (1 + max) * amp);
+          // Calculate height based on amplitude, ensuring a minimum line visibility
+          const height = Math.max(1, (max - min) * amp);
+          // Center the block vertically
+          const y = centerY - (height / 2);
+          
+          ctx.fillRect(i, y, 1, height);
         }
-        ctx.stroke();
       }
 
       // Draw progress cursor if playing
       if (isPlaying) {
         const x = currentProgress * CANVAS_WIDTH;
-        ctx.strokeStyle = '#FBBF24'; // amber-400, a nice yellow for the cursor
+        ctx.strokeStyle = '#FBBF24'; // amber-400
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(x, 0);

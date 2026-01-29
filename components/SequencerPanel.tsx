@@ -1,10 +1,9 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronDownIcon, DownloadIcon, PlayIcon, RecordIcon, StopIcon, TrashIcon, PlusIcon } from './icons';
 import { LoopVisualizer } from './LoopVisualizer';
 import { Tooltip } from './Tooltip';
-import type { DrumPattern, DrumType } from '../types';
+import type { DrumPattern, DrumType, LoopEvent } from '../types';
 
 interface SequencerPanelProps {
     bpm: number;
@@ -33,6 +32,12 @@ interface SequencerPanelProps {
     mode: 'metronome' | 'drums';
     onModeChange: (mode: 'metronome' | 'drums') => void;
     onAddToPatterns: () => void;
+    
+    // Multi-slot props
+    loops: Record<string, LoopEvent[]>;
+    activeSlot: string;
+    queuedSlot: string | null;
+    onSlotChange: (slot: string) => void;
 }
 
 const ControlButton: React.FC<{
@@ -46,7 +51,7 @@ const ControlButton: React.FC<{
     className?: string;
     showTooltip: boolean;
 }> = ({ onClick, disabled = false, active = false, activeColor = 'border-synth-cyan-500', children, label, subLabel, className = '', showTooltip }) => (
-    <Tooltip text={label} show={showTooltip}>
+    <Tooltip text={label} show={showTooltip} className="w-full h-full">
         <button
             onClick={onClick}
             disabled={disabled}
@@ -71,6 +76,9 @@ const ControlButton: React.FC<{
         </button>
     </Tooltip>
 );
+
+// ... rest of the file is unchanged, but included for context if needed ...
+// I will provide the full file content to ensure no structure is broken.
 
 const ClockVisualizer: React.FC<{
     progress: number;
@@ -225,7 +233,8 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
     loopState, onRecord, onPlay, onClear, onDownload, loopProgress,
     isDownloading, hasLoop, countInBeat,
     countInMeasure, loopBars, onLoopBarsChange, isLooping, loopBuffer, showTooltips,
-    drumPattern, onDrumPatternChange, currentStep, mode, onModeChange, onAddToPatterns
+    drumPattern, onDrumPatternChange, currentStep, mode, onModeChange, onAddToPatterns,
+    loops, activeSlot, queuedSlot, onSlotChange
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const isRecording = loopState === 'recording' || loopState === 'overdubbing';
@@ -291,23 +300,23 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
   if (loopState === 'recording') {
       statusText = "RECORDING";
       statusColor = "text-red-500";
-      subText = "LIVE INPUT";
+      subText = `SLOT ${activeSlot} INPUT`;
   } else if (loopState === 'overdubbing') {
       statusText = "OVERDUB";
       statusColor = "text-amber-500";
-      subText = "LAYERING";
+      subText = `SLOT ${activeSlot}`;
   } else if (loopState === 'playing') {
       statusText = "PLAYING";
       statusColor = "text-synth-cyan-500";
-      subText = `LOOP: ${loopBars} BAR`;
+      subText = `SLOT ${activeSlot}`;
   } else if (loopState === 'countingIn') {
       statusText = "COUNT IN";
       statusColor = "text-yellow-500";
-      subText = "GET READY";
+      subText = `TO SLOT ${activeSlot}`;
   } else if (hasLoop) {
       statusText = "STOPPED";
       statusColor = "text-white";
-      subText = "LOOP LOADED";
+      subText = `SLOT ${activeSlot} LOADED`;
   }
 
   let displayProgress = loopProgress;
@@ -374,8 +383,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
               
               {/* TOP: Metronome/Drums Controls */}
               <div className="w-full flex flex-col gap-5 flex-shrink-0 bg-synth-gray-800 p-5 rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] border border-synth-gray-700">
-                
-                {/* Header & Status */}
                 <div className="flex justify-between items-end">
                     <label className="text-xs font-bold text-synth-gray-500 uppercase tracking-widest">{mode === 'drums' ? 'Drum Machine' : 'Metronome'}</label>
                     <div className="flex items-center gap-2">
@@ -386,14 +393,11 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                     </div>
                 </div>
 
-                {/* Top Controls Area */}
                 <div className="bg-synth-gray-900/50 rounded-lg p-3 border border-synth-gray-700/50 flex flex-col gap-3">
                     
                     <div className="flex gap-4 items-stretch">
                         
-                        {/* LEFT: BPM Input & Tap (Stacked) */}
                         <div className="flex flex-col gap-2 w-20 flex-shrink-0">
-                             {/* BPM Readout */}
                              <div className="w-full flex items-center justify-center bg-black/40 h-8 rounded border border-synth-gray-700 relative group">
                                 <input
                                     type="number"
@@ -406,7 +410,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                                 <span className="absolute bottom-0.5 right-1 text-[7px] text-synth-gray-500 font-bold pointer-events-none">BPM</span>
                              </div>
                              
-                             {/* Tap Button */}
                              <Tooltip text="Tap rhythm to set BPM" show={showTooltips}>
                                 <button 
                                     onClick={handleTapTempo}
@@ -417,7 +420,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                              </Tooltip>
                         </div>
 
-                        {/* MIDDLE: Slider */}
                         <div className="flex-grow flex flex-col justify-center gap-1">
                              <div className="flex justify-between px-1">
                                  <span className="text-[9px] font-bold text-synth-gray-500 uppercase">Slow</span>
@@ -436,7 +438,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                              </div>
                         </div>
 
-                        {/* RIGHT: Stacked Mode Buttons */}
                         <div className="flex flex-col gap-2 w-28 flex-shrink-0">
                              <Tooltip text="Switch to Metronome" show={showTooltips}>
                                 <button 
@@ -465,7 +466,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                         </div>
                     </div>
                     
-                    {/* Drum View */}
                     {mode === 'drums' && (
                         <div className="flex flex-col gap-3 pt-2 h-32 justify-center w-full px-1 border-t border-synth-gray-700/50">
                             {renderDrumRow('kick', 'KICK', 'bg-red-600', 'text-red-400')}
@@ -475,7 +475,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                     )}
                 </div>
 
-                {/* Transport Button */}
                 <button
                     onClick={onToggleMetronome}
                     className={`w-full py-3 rounded-lg font-bold text-sm uppercase tracking-widest transition-all shadow-md transform active:scale-[0.98]
@@ -488,7 +487,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
 
                 <div className="h-px bg-synth-gray-700 w-full my-1" />
 
-                {/* Loop Length */}
                 <div className="flex flex-col gap-2">
                     <label className="text-xs font-bold text-synth-gray-500 uppercase tracking-widest">Loop Length</label>
                     <div className="flex gap-2 h-9">
@@ -526,7 +524,7 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
               {/* BOTTOM: Looper Interface */}
               <div className="flex flex-row items-center justify-between gap-6 w-full p-6 bg-synth-gray-800/50 rounded-xl border border-synth-gray-700/30">
                    
-                   {/* 1. Visual Clock */}
+                   {/* 1. Visual Clock (Left) */}
                    <ClockVisualizer 
                         progress={displayProgress} 
                         state={loopState} 
@@ -537,16 +535,42 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                    />
 
                    {/* 2. Controls & Info Column */}
-                   <div className="flex-grow flex flex-col justify-between h-full min-h-[140px] gap-4">
+                   <div className="flex-grow flex flex-col justify-between h-full min-h-[160px] gap-4">
                         
-                        {/* Top: Status Display */}
-                        <div className="flex flex-col items-end border-b border-synth-gray-700/50 pb-2">
-                             <h2 className={`text-3xl font-black tracking-tighter ${statusColor} ${isRecording ? 'animate-pulse' : ''}`}>
-                                {statusText}
-                             </h2>
-                             <div className="flex items-center gap-3">
-                                <span className="text-[10px] font-mono text-synth-gray-500">{bpm} BPM</span>
-                                <span className="text-[10px] font-bold text-synth-gray-400 uppercase tracking-widest">{subText}</span>
+                        {/* Top: Status & Slot Selector */}
+                        <div className="flex justify-between items-start border-b border-synth-gray-700/50 pb-2">
+                             {/* Slot Selector */}
+                             <div className="flex gap-2">
+                                {['A', 'B', 'C', 'D'].map(slot => {
+                                    const isActive = activeSlot === slot;
+                                    const isQueued = queuedSlot === slot;
+                                    const hasData = loops[slot].length > 0;
+                                    
+                                    let bgClass = 'bg-synth-gray-900 text-synth-gray-500 hover:bg-synth-gray-700';
+                                    if (isActive) bgClass = 'bg-synth-cyan-500 text-synth-gray-900 font-bold shadow-lg';
+                                    else if (isQueued) bgClass = 'bg-yellow-500 text-synth-gray-900 animate-pulse';
+                                    else if (hasData) bgClass = 'bg-synth-gray-700 text-white';
+
+                                    return (
+                                        <button
+                                            key={slot}
+                                            onClick={() => onSlotChange(slot)}
+                                            className={`w-8 h-8 rounded-lg text-xs transition-all border border-transparent ${bgClass} ${isActive ? 'scale-110' : ''}`}
+                                        >
+                                            {slot}
+                                        </button>
+                                    );
+                                })}
+                             </div>
+
+                             <div className="flex flex-col items-end">
+                                 <h2 className={`text-3xl font-black tracking-tighter ${statusColor} ${isRecording ? 'animate-pulse' : ''}`}>
+                                    {statusText}
+                                 </h2>
+                                 <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-mono text-synth-gray-500">{bpm} BPM</span>
+                                    <span className="text-[10px] font-bold text-synth-gray-400 uppercase tracking-widest">{subText}</span>
+                                 </div>
                              </div>
                         </div>
 
@@ -568,7 +592,7 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                                 onClick={onPlay} 
                                 active={loopState === 'playing' || loopState === 'overdubbing'}
                                 activeColor="border-synth-cyan-500"
-                                disabled={!hasLoop} 
+                                disabled={!hasLoop && loopState === 'idle'} 
                                 label={loopState === 'playing' ? 'Stop' : 'Play'}
                                 subLabel="PLAY"
                                 showTooltip={showTooltips}
@@ -576,7 +600,7 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                                 {(loopState === 'playing' || loopState === 'overdubbing') ? <StopIcon className="w-5 h-5 text-synth-cyan-500"/> : <PlayIcon className="w-5 h-5"/>}
                             </ControlButton>
 
-                            <ControlButton onClick={onClear} disabled={!hasLoop || isRecording} label="Clear Loop" subLabel="CLEAR" showTooltip={showTooltips}>
+                            <ControlButton onClick={onClear} disabled={(!hasLoop && loopState === 'idle') || isRecording} label="Clear Loop" subLabel="CLEAR" showTooltip={showTooltips}>
                                 <TrashIcon className="w-5 h-5"/>
                             </ControlButton>
 
@@ -599,7 +623,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
             {/* Mini Waveform */}
             {loopBuffer && (
                 <div className="mt-4 h-12 bg-black rounded border border-synth-gray-800 opacity-80 overflow-hidden relative">
-                     {/* Overlay Grid */}
                      <div className="absolute inset-0 flex pointer-events-none z-10 opacity-20">
                         {Array.from({ length: loopBars }).map((_, i) => (
                              <div key={i} className="flex-1 border-r border-white last:border-0" />

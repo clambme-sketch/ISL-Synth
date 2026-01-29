@@ -1,4 +1,9 @@
 
+
+
+
+
+
 export type WaveformType = 'sine' | 'square' | 'sawtooth' | 'triangle';
 
 export interface ADSREnvelope {
@@ -76,6 +81,17 @@ export interface SynthSettings {
     osc2: OscillatorSettings;
     mix: number;
     sampleVolume?: number;
+    warpRatio?: number; // Added for Sample Warping support
+    // Full effects chain settings for export
+    filter: FilterSettings;
+    reverb: ReverbSettings;
+    delay: DelaySettings;
+    saturation: SaturationSettings;
+    chorus: ChorusSettings;
+    phaser: PhaserSettings;
+    lfo: LFOSettings;
+    activeCategory?: PresetCategory;
+    activePresetName?: string;
 }
 
 export type ChordMode = 'major' | 'dominant7' | 'minor' | 'diminished' | 'augmented' | 'diatonic';

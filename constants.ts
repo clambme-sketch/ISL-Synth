@@ -7,6 +7,10 @@
 
 
 
+
+
+
+
 import type { SynthPreset, FilterSettings, ReverbSettings, DelaySettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, ArpeggiatorSettings } from './types';
 
 export const NOTE_FREQUENCIES: { [note: string]: number } = {
@@ -517,15 +521,15 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     reverb: { ...DEFAULT_REVERB_SETTINGS, on: false },
   },
   {
-    name: '606 Bongo', // Renamed from 808 Bongo
+    name: '808 Conga', // Renamed from 606 Bongo
     category: '808',
-    adsr: { attack: 0.001, decay: 0.18, sustain: 0.0, release: 0.1 },
-    osc1: { waveform: 'sine', detune: 0, octave: 1 }, 
-    osc2: { waveform: 'triangle', detune: 5, octave: 1 }, // Triangle adds texture
-    mix: 0.4,
+    adsr: { attack: 0.001, decay: 0.15, sustain: 0.0, release: 0.1 },
+    osc1: { waveform: 'sine', detune: 0, octave: 0 }, 
+    osc2: { waveform: 'sine', detune: 5, octave: 0 }, 
+    mix: 0.5,
     singleOscillator: false,
-    filter: { on: true, type: 'bandpass', cutoff: 450, resonance: 6.0 }, // Tubby 606 sound
-    saturation: { on: true, mix: 0.4, drive: 0.4 }, // Slight dirt
+    filter: { on: true, type: 'bandpass', cutoff: 400, resonance: 6.0 }, // 400Hz resonant thud
+    saturation: { on: true, mix: 0.2, drive: 0.3 }, 
   },
   {
     name: '808 Clave',
