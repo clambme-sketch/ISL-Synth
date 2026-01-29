@@ -1,9 +1,10 @@
+
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Keyboard } from './components/Keyboard';
 import { Controls } from './components/Controls';
 import { AudioEngine } from './services/audioService';
-import type { ADSREnvelope, OscillatorSettings, SynthPreset, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, PresetCategory, ArpeggiatorSettings, SongMeasure, SongPattern, DrumPattern, ArrangementBlock, LoopEvent } from './types';
-import { KEY_MAP, SYNTH_PRESETS, KEYBOARD_NOTES, DEFAULT_FILTER_SETTINGS, DEFAULT_REVERB_SETTINGS, DEFAULT_DELAY_SETTINGS, DEFAULT_SATURATION_SETTINGS, DEFAULT_CHORUS_SETTINGS, DEFAULT_PHASER_SETTINGS, DEFAULT_LFO_SETTINGS, DEFAULT_ARP_SETTINGS } from './constants';
+import type { ADSREnvelope, OscillatorSettings, SynthPreset, ChordMode, ReverbSettings, DelaySettings, FilterSettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, PresetCategory, ArpeggiatorSettings, SongMeasure, SongPattern, DrumPattern, ArrangementBlock, LoopEvent, VisualizerSettings } from './types';
+import { KEY_MAP, SYNTH_PRESETS, KEYBOARD_NOTES, DEFAULT_FILTER_SETTINGS, DEFAULT_REVERB_SETTINGS, DEFAULT_DELAY_SETTINGS, DEFAULT_SATURATION_SETTINGS, DEFAULT_CHORUS_SETTINGS, DEFAULT_PHASER_SETTINGS, DEFAULT_LFO_SETTINGS, DEFAULT_ARP_SETTINGS, DEFAULT_VISUALIZER_SETTINGS } from './constants';
 import { SidePanel } from './components/SidePanel';
 import { SequencerPanel } from './components/SequencerPanel';
 import { useMetronome } from './hooks/useMetronome';
@@ -82,6 +83,7 @@ const App: React.FC = () => {
   const [oscMix, setOscMix] = useState<number>(SYNTH_PRESETS[0].mix);
   const [activePresetName, setActivePresetName] = useState<string>(SYNTH_PRESETS[0].name);
   const [activeCategory, setActiveCategory] = useState<PresetCategory>(SYNTH_PRESETS[0].category);
+  const [isMono, setIsMono] = useState<boolean>(false);
 
   // --- APP & AUDIO STATE ---
   const [pressedNotes, setPressedNotes] = useState<Set<string>>(new Set());
@@ -105,14 +107,14 @@ const App: React.FC = () => {
   const [sampleBpm, setSampleBpm] = useState<number>(120);
   
   // --- SEQUENCER & DRUM STATE ---
-  const [sequencerMode, setSequencerMode] = useState<'metronome' | 'drums'>('metronome');
+  const [sequencerMode, setSequencerMode] = useState<'metronome' | 'drums'>('drums');
   const sequencerModeRef = useRef(sequencerMode); 
   useEffect(() => { sequencerModeRef.current = sequencerMode; }, [sequencerMode]);
 
   const [drumPattern, setDrumPattern] = useState<DrumPattern>({
-      kick: Array(16).fill(false),
+      kick: Array(16).fill(false).map((_, i) => i === 0),
       snare: Array(16).fill(false),
-      hihat: Array(16).fill(false)
+      hihat: Array(16).fill(true)
   });
   // Ref for immediate access in audio scheduler
   const drumPatternRef = useRef(drumPattern);
@@ -130,6 +132,7 @@ const App: React.FC = () => {
   const [preferFlats, setPreferFlats] = useState(false);
   const [adaptiveTuning, setAdaptiveTuning] = useState(true);
   const [showTooltips, setShowTooltips] = useState(true);
+  const [visualizerSettings, setVisualizerSettings] = useState<VisualizerSettings>(DEFAULT_VISUALIZER_SETTINGS);
   const [noteFrequencies, setNoteFrequencies] = useState<Map<string, number>>(new Map());
 
 
@@ -226,7 +229,7 @@ const App: React.FC = () => {
           time, 
           note, 
           settings.activeCategory, 
-          settings.warpRatio,
+          settings.warpRatio, 
           settings.activePresetName
       );
 
@@ -286,6 +289,7 @@ const App: React.FC = () => {
     osc1,
     osc2,
     oscMix,
+    mono: isMono,
     octaveOffset,
     sustainOn,
     autoChordsOn,
@@ -312,6 +316,7 @@ const App: React.FC = () => {
       osc1,
       osc2,
       oscMix,
+      mono: isMono,
       octaveOffset,
       sustainOn,
       autoChordsOn,
@@ -346,6 +351,9 @@ const App: React.FC = () => {
   useEffect(() => { audioEngineRef.current?.setAdaptiveTuning(adaptiveTuning); }, [adaptiveTuning]);
   useEffect(() => { audioEngineRef.current?.setMasterVolume(masterVolume); }, [masterVolume]);
   useEffect(() => { audioEngineRef.current?.setSampleVolume(sampleVolume); }, [sampleVolume]);
+  
+  // Sync Mono State
+  useEffect(() => { audioEngineRef.current?.setMono(isMono); }, [isMono]);
 
 
   // --- FREQUENCY MONITORING ---
@@ -1141,6 +1149,8 @@ const App: React.FC = () => {
     setOscMix(preset.mix);
     setActivePresetName(preset.name);
     setActiveCategory(preset.category);
+    // Automatically set mono state if preset demands it
+    setIsMono(preset.mono || false);
 
     setFilterSettings(preset.filter ?? DEFAULT_FILTER_SETTINGS);
     setReverbSettings(preset.reverb ?? DEFAULT_REVERB_SETTINGS);
@@ -1300,9 +1310,12 @@ const App: React.FC = () => {
             onPresetChange={handlePresetChange}
             activePresetName={activePresetName}
             activeCategory={activeCategory}
+            isMono={isMono}
+            setIsMono={setIsMono}
             analyserX={audioEngineRef.current?.analyserX ?? null}
             analyserY={audioEngineRef.current?.analyserY ?? null}
             showTooltips={showTooltips}
+            visualizerSettings={visualizerSettings}
             onSampleLoad={handleSampleLoad}
             sampleBuffer={sampleBuffer}
             trimStart={trimStart}
@@ -1468,6 +1481,8 @@ const App: React.FC = () => {
                 onConnectMidi={handleConnectMidi}
                 showTooltips={showTooltips}
                 onShowTooltipsChange={setShowTooltips}
+                visualizerSettings={visualizerSettings}
+                onVisualizerSettingsChange={setVisualizerSettings}
             />
           </div>
         </div>

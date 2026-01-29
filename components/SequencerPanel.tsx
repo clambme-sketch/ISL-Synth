@@ -77,9 +77,6 @@ const ControlButton: React.FC<{
     </Tooltip>
 );
 
-// ... rest of the file is unchanged, but included for context if needed ...
-// I will provide the full file content to ensure no structure is broken.
-
 const ClockVisualizer: React.FC<{
     progress: number;
     state: string;
@@ -241,6 +238,18 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
   const [localBpm, setLocalBpm] = useState(bpm.toString());
   const [tapTimes, setTapTimes] = useState<number[]>([]);
 
+  // Painting Logic
+  const isPaintingRef = useRef(false);
+  const paintValueRef = useRef(false);
+
+  useEffect(() => {
+      const handleGlobalMouseUp = () => {
+          isPaintingRef.current = false;
+      };
+      window.addEventListener('mouseup', handleGlobalMouseUp);
+      return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
+
   useEffect(() => {
     setLocalBpm(bpm.toString());
   }, [bpm]);
@@ -284,12 +293,34 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
       }
   };
 
-  const toggleDrumStep = (type: DrumType, step: number) => {
+  const toggleDrumStep = (type: DrumType, step: number, forceValue?: boolean) => {
       const newPattern = {
-          ...drumPattern,
-          [type]: drumPattern[type].map((isActive, index) => index === step ? !isActive : isActive)
+          kick: [...drumPattern.kick],
+          snare: [...drumPattern.snare],
+          hihat: [...drumPattern.hihat]
       };
+      
+      const currentValue = newPattern[type][step];
+      newPattern[type][step] = forceValue !== undefined ? forceValue : !currentValue;
+      
       onDrumPatternChange(newPattern);
+  };
+
+  const handleStepMouseDown = (e: React.MouseEvent, type: DrumType, step: number) => {
+      e.preventDefault();
+      isPaintingRef.current = true;
+      const currentValue = drumPattern[type][step];
+      const newValue = !currentValue;
+      paintValueRef.current = newValue;
+      toggleDrumStep(type, step, newValue);
+  };
+
+  const handleStepMouseEnter = (type: DrumType, step: number) => {
+      if (isPaintingRef.current) {
+          if (drumPattern[type][step] !== paintValueRef.current) {
+              toggleDrumStep(type, step, paintValueRef.current);
+          }
+      }
   };
 
   // Determine status text
@@ -340,9 +371,10 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                           return (
                               <div
                                   key={stepIndex}
-                                  onClick={() => toggleDrumStep(type, stepIndex)}
+                                  onMouseDown={(e) => handleStepMouseDown(e, type, stepIndex)}
+                                  onMouseEnter={() => handleStepMouseEnter(type, stepIndex)}
                                   className={`
-                                      relative cursor-pointer rounded-sm transition-all duration-75
+                                      relative cursor-pointer rounded-sm transition-all duration-75 select-none
                                       ${isActive 
                                           ? `${colorClass} shadow-[0_0_8px_rgba(0,0,0,0.5)] scale-[0.95]` 
                                           : 'bg-synth-gray-700 hover:bg-synth-gray-600'
@@ -575,7 +607,7 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                         </div>
 
                         {/* Bottom: Button Grid */}
-                        <div className="grid grid-cols-5 gap-3">
+                        <div className="grid grid-cols-4 gap-3">
                             <ControlButton 
                                 onClick={onRecord} 
                                 disabled={!isMetronomePlaying && loopState === 'idle'}
@@ -610,10 +642,6 @@ export const SequencerPanel: React.FC<SequencerPanelProps> = ({
                                 ) : (
                                     <DownloadIcon className="w-5 h-5"/>
                                 )}
-                            </ControlButton>
-                            
-                            <ControlButton onClick={onAddToPatterns} disabled={!hasLoop || isRecording} label="Add Loop to Song Patterns" subLabel="TO SEQ" showTooltip={showTooltips}>
-                                <PlusIcon className="w-5 h-5"/>
                             </ControlButton>
                         </div>
                    </div>

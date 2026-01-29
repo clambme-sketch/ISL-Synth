@@ -1,6 +1,7 @@
 
 import type { ADSREnvelope, OscillatorSettings, LoopEvent, SynthSettings, FilterSettings, DelaySettings, ReverbSettings, SaturationSettings, PhaserSettings, ChorusSettings, LFOSettings, LFOTarget, PresetCategory, SampleSettings, DrumType } from '../types';
 import { NOTE_FREQUENCIES, JUST_INTONATION_RATIOS, ALL_NOTES_CHROMATIC, DEFAULT_LFO_SETTINGS } from '../constants';
+import { detectChordFromNotes, NOTE_NAME_TO_CHROMATIC_INDEX, normalizeNoteName } from './musicTheory';
 
 // Safety constant to prevent "Non-finite" errors in exponential ramps
 const MIN_VALUE = 0.0001;
@@ -41,6 +42,7 @@ export class AudioEngine {
   private allpassFilter: BiquadFilterNode;
   private activeNodes: Map<string, ActiveNode> = new Map();
   private adaptiveTuningEnabled = false;
+  private monoEnabled = false;
   private noteToIndexMap: Map<string, number> = new Map();
   private currentPitchBend = 0;
   private retuneTimeout: number | null = null;
@@ -498,6 +500,17 @@ export class AudioEngine {
     }
 
     const now = time ?? this.audioContext.currentTime;
+    
+    // --- MONO MODE LOGIC ---
+    if (this.monoEnabled) {
+        // Stop all other notes instantly (fast fade) to enforce monophony
+        this.activeNodes.forEach((_, activeNote) => {
+            if (activeNote !== note) {
+                this.stopNote(activeNote, 0.005, now);
+            }
+        });
+    }
+
     const finalRootNote = rootNote || note;
     
     const adsrGain = this.audioContext.createGain();
@@ -665,6 +678,10 @@ export class AudioEngine {
         peakGain,
         sustainGain
     });
+    
+    if (this.adaptiveTuningEnabled) {
+        this.scheduleRetune();
+    }
   }
 
   public stopNote(note: string, release: number, time?: number): void {
@@ -674,17 +691,15 @@ export class AudioEngine {
     const now = time ?? this.audioContext.currentTime;
     const { adsrGain, sources } = activeNode;
 
-    // Prevent clicking by cancelling scheduled values
+    // Prevent clicking by cancelling scheduled values.
+    // This is crucial for future scheduled events.
     adsrGain.gain.cancelScheduledValues(now);
     
-    // Smooth release
-    // Important: We must ramp from the CURRENT value, not an assumed sustain value
-    // because the key might be released before attack/decay finished.
-    const currentValue = adsrGain.gain.value; // Approximate, typically need to track computed value or just ramp
-    
-    // We use setTargetAtTime for a natural exponential decay that starts from wherever it is
-    adsrGain.gain.setValueAtTime(adsrGain.gain.value, now);
-    adsrGain.gain.exponentialRampToValueAtTime(0.001, now + Math.max(release, 0.01));
+    // Smooth release logic using setTargetAtTime
+    // This works correctly for both immediate (Key Up) and future (Looper) events
+    // because it transitions from the *scheduled* value at 'now', avoiding the 'value' property read issue.
+    // Time constant = release / 4 ensures gain drops ~98% by the end of release time.
+    adsrGain.gain.setTargetAtTime(0, now, Math.max(release / 4, 0.005));
 
     const stopTime = now + release + 0.1; 
 
@@ -699,6 +714,9 @@ export class AudioEngine {
         // Double check it hasn't been re-triggered
         if (this.activeNodes.get(note) === activeNode) {
             this.activeNodes.delete(note);
+            if (this.adaptiveTuningEnabled) {
+                this.scheduleRetune();
+            }
         }
     }, (release + 0.2) * 1000);
   }
@@ -733,116 +751,200 @@ export class AudioEngine {
     const offlineCtx = new OfflineAudioContext(2, length, sampleRate);
 
     // --- RECREATE AUDIO GRAPH FOR OFFLINE RENDER ---
-    // We cannot reuse the live nodes (AudioContext) in the OfflineContext.
-    // We must rebuild the chain with the current settings.
+    // Topology must replicate Live Engine:
+    // Source -> Master -> Tremolo -> Filter -> Saturation -> Phaser -> Chorus -> [Delay, Reverb, Dry] -> Compressor
 
     const masterGain = offlineCtx.createGain();
     masterGain.gain.value = 1.0;
 
     const compressor = offlineCtx.createDynamicsCompressor();
     compressor.threshold.value = -1.0;
+    compressor.knee.value = 10;
     compressor.ratio.value = 12.0;
+    compressor.attack.value = 0.005;
+    compressor.release.value = 0.1;
     compressor.connect(offlineCtx.destination);
 
-    // --- Reconstruct Effects Chain ---
-    // This is a simplified version of the live chain but captures the essential sound processing.
-    // 1. Filter
+    // 1. Tremolo Node
+    const tremoloGain = offlineCtx.createGain();
+    tremoloGain.gain.value = 1.0;
+    masterGain.connect(tremoloGain);
+
+    // 2. Filter
     const filter = offlineCtx.createBiquadFilter();
     filter.type = settings.filter.type;
-    filter.frequency.value = safePos(settings.filter.cutoff, 20000);
-    filter.Q.value = safePos(settings.filter.resonance, 1);
+    filter.frequency.value = settings.filter.on ? safePos(settings.filter.cutoff, 20000) : 20000;
+    filter.Q.value = settings.filter.on ? safePos(settings.filter.resonance, 1) : 1;
+    tremoloGain.connect(filter);
+
+    // 3. Saturation
+    const saturationIn = offlineCtx.createGain();
+    const saturationNode = offlineCtx.createWaveShaper();
+    const saturationWet = offlineCtx.createGain();
+    const saturationDry = offlineCtx.createGain();
     
-    // 2. Distortion
-    const distIn = offlineCtx.createGain();
-    const distNode = offlineCtx.createWaveShaper();
-    const distWet = offlineCtx.createGain();
-    const distDry = offlineCtx.createGain();
+    filter.connect(saturationIn);
     
     if (settings.saturation.on) {
-        distNode.curve = this.makeDistortionCurve(safe(settings.saturation.drive));
-        distWet.gain.value = safe(settings.saturation.mix);
-        distDry.gain.value = 1 - safe(settings.saturation.mix);
+        saturationNode.curve = this.makeDistortionCurve(safe(settings.saturation.drive));
+        saturationNode.oversample = '4x';
+        saturationWet.gain.value = safe(settings.saturation.mix);
+        saturationDry.gain.value = 1 - safe(settings.saturation.mix);
     } else {
-        distWet.gain.value = 0;
-        distDry.gain.value = 1;
+        saturationWet.gain.value = 0;
+        saturationDry.gain.value = 1;
     }
     
-    // 3. Delay
-    const delay = offlineCtx.createDelay(2.0);
-    const delayFb = offlineCtx.createGain();
-    const delayWet = offlineCtx.createGain();
-    const delayDry = offlineCtx.createGain();
+    saturationIn.connect(saturationNode);
+    saturationNode.connect(saturationWet);
+    saturationIn.connect(saturationDry);
+
+    // 4. Phaser
+    const phaserIn = offlineCtx.createGain();
+    const phaserWet = offlineCtx.createGain();
+    const phaserDry = offlineCtx.createGain();
     
+    saturationWet.connect(phaserIn);
+    saturationDry.connect(phaserIn);
+    
+    let phaserOutputNode: AudioNode = phaserIn;
+
+    if (settings.phaser.on) {
+        phaserWet.gain.value = safe(settings.phaser.mix);
+        phaserDry.gain.value = 1 - safe(settings.phaser.mix);
+        
+        const phaserFilters: BiquadFilterNode[] = [];
+        for(let i=0; i<6; i++) {
+            const f = offlineCtx.createBiquadFilter();
+            f.type = 'allpass';
+            f.frequency.value = safePos(settings.phaser.baseFrequency, 350);
+            f.Q.value = 1;
+            phaserFilters.push(f);
+        }
+        
+        // Connect Chain
+        phaserIn.connect(phaserFilters[0]);
+        for(let i=0; i<5; i++) {
+            phaserFilters[i].connect(phaserFilters[i+1]);
+        }
+        phaserFilters[5].connect(phaserWet);
+        phaserIn.connect(phaserDry);
+        
+        // Create LFO for Phaser
+        const pLfo = offlineCtx.createOscillator();
+        pLfo.type = 'sine';
+        pLfo.frequency.value = safePos(settings.phaser.rate);
+        const pLfoGain = offlineCtx.createGain();
+        pLfoGain.gain.value = safe(settings.phaser.depth * 1000);
+        
+        pLfo.connect(pLfoGain);
+        phaserFilters.forEach(f => pLfoGain.connect(f.frequency));
+        pLfo.start(0);
+        
+        // Output junction
+        const phaserJoin = offlineCtx.createGain();
+        phaserWet.connect(phaserJoin);
+        phaserDry.connect(phaserJoin);
+        phaserOutputNode = phaserJoin;
+    }
+
+    // 5. Chorus
+    const chorusIn = offlineCtx.createGain();
+    phaserOutputNode.connect(chorusIn);
+    
+    let chorusOutputNode: AudioNode = chorusIn;
+    
+    if (settings.chorus.on) {
+        const chorusWet = offlineCtx.createGain();
+        const chorusDry = offlineCtx.createGain();
+        const chorusDelay = offlineCtx.createDelay(0.1);
+        
+        chorusWet.gain.value = safe(settings.chorus.mix);
+        chorusDry.gain.value = 1 - safe(settings.chorus.mix);
+        
+        const cLfo = offlineCtx.createOscillator();
+        cLfo.type = 'sine';
+        cLfo.frequency.value = safePos(settings.chorus.rate);
+        const cLfoGain = offlineCtx.createGain();
+        cLfoGain.gain.value = safe(settings.chorus.depth * 0.005);
+        
+        cLfo.connect(cLfoGain);
+        cLfoGain.connect(chorusDelay.delayTime);
+        cLfo.start(0);
+        
+        chorusIn.connect(chorusDry);
+        chorusIn.connect(chorusDelay);
+        chorusDelay.connect(chorusWet);
+        
+        const chorusJoin = offlineCtx.createGain();
+        chorusWet.connect(chorusJoin);
+        chorusDry.connect(chorusJoin);
+        chorusOutputNode = chorusJoin;
+    }
+
+    // 6. Global FX Bus (Delay, Reverb, Dry) -> Compressor
+    const fxInput = chorusOutputNode;
+    const finalDryGain = offlineCtx.createGain();
+    finalDryGain.gain.value = 1.0;
+    
+    fxInput.connect(finalDryGain);
+    finalDryGain.connect(compressor);
+    
+    // Delay
     if (settings.delay.on) {
-        delay.delayTime.value = safePos(settings.delay.time, 0.5);
-        delayFb.gain.value = safe(settings.delay.feedback, 0.4);
-        delayWet.gain.value = safe(settings.delay.mix, 0.4);
-        delayDry.gain.value = 1; // Parallel
-    } else {
-        delayWet.gain.value = 0;
-        delayDry.gain.value = 1;
+        const dNode = offlineCtx.createDelay(2.0);
+        const dFb = offlineCtx.createGain();
+        const dWet = offlineCtx.createGain();
+        
+        dNode.delayTime.value = safePos(settings.delay.time);
+        dFb.gain.value = safe(settings.delay.feedback);
+        dWet.gain.value = safe(settings.delay.mix);
+        
+        fxInput.connect(dNode);
+        dNode.connect(dFb);
+        dFb.connect(dNode);
+        dNode.connect(dWet);
+        dWet.connect(compressor);
     }
     
-    delay.connect(delayFb);
-    delayFb.connect(delay);
-
-    // 4. Reverb
-    const reverb = offlineCtx.createConvolver();
-    const reverbWet = offlineCtx.createGain();
-    const reverbDry = offlineCtx.createGain();
-    
+    // Reverb
     if (settings.reverb.on) {
-        // Generate IR for offline context
-        reverb.buffer = this.createImpulseResponse(offlineCtx, 0.01, safePos(settings.reverb.decay, 1.5));
-        reverbWet.gain.value = safe(settings.reverb.mix, 0.3);
-    } else {
-        reverbWet.gain.value = 0;
+        const rNode = offlineCtx.createConvolver();
+        const rWet = offlineCtx.createGain();
+        rNode.buffer = this.createImpulseResponse(offlineCtx, 0.01, safePos(settings.reverb.decay));
+        rWet.gain.value = safe(settings.reverb.mix);
+        
+        fxInput.connect(rNode);
+        rNode.connect(rWet);
+        rWet.connect(compressor);
     }
-    reverbDry.gain.value = 1; // Parallel
 
-    // --- Connect Chain ---
-    // Source -> Filter -> Dist -> [Delay, Reverb, Dry] -> Compressor
-    
-    masterGain.connect(filter);
-    
-    // Filter -> Distortion Block
-    filter.connect(distIn);
-    distIn.connect(distNode);
-    distIn.connect(distDry);
-    
-    // Distortion Output -> Parallel FX Bus
-    const fxBus = offlineCtx.createGain();
-    distNode.connect(distWet);
-    distWet.connect(fxBus);
-    distDry.connect(fxBus);
-    
-    // FX Bus -> Delay
-    fxBus.connect(delay);
-    delay.connect(delayWet);
-    
-    // FX Bus -> Reverb
-    fxBus.connect(reverb);
-    reverb.connect(reverbWet);
-    
-    // FX Bus -> Dry (to Comp)
-    fxBus.connect(compressor); // Dry signal pass-through
-    
-    // Wet Signals -> Comp
-    delayWet.connect(compressor);
-    reverbWet.connect(compressor);
-
+    // 7. Global LFO
+    // This needs to be wired if it affects Filter or Tremolo
+    if (settings.lfo.on && !settings.lfo.keySync) {
+        const gLfo = offlineCtx.createOscillator();
+        gLfo.type = settings.lfo.waveform;
+        gLfo.frequency.value = safePos(settings.lfo.rate);
+        const gLfoGain = offlineCtx.createGain();
+        
+        gLfo.connect(gLfoGain);
+        
+        if (settings.lfo.target === 'filter') {
+            gLfoGain.gain.value = safe(settings.lfo.depth * 2000);
+            gLfoGain.connect(filter.frequency);
+        } else if (settings.lfo.target === 'amplitude') {
+            gLfoGain.gain.value = safe(settings.lfo.depth);
+            gLfoGain.connect(tremoloGain.gain);
+        }
+        
+        gLfo.start(0);
+    }
 
     // --- RENDER EVENTS ---
-    
-    // Pre-calculate LFO values if global
-    // (Simplification: Offline render doesn't fully support complex global LFO modulation of filters yet without automation curves, 
-    // but per-voice LFOs will work)
-
     for (const event of loopEvents) {
         const startTime = safePos(event.startTime);
         const duration = safePos(event.duration);
         
-        // Skip events outside buffer
         if (startTime >= totalDuration) continue;
 
         const noteGain = offlineCtx.createGain();
@@ -856,53 +958,146 @@ export class AudioEngine {
         const peakGain = 0.25;
         const sustainGain = safePos(peakGain * sustain, MIN_VALUE);
 
-        // Envelope
         noteGain.gain.setValueAtTime(0, startTime);
         noteGain.gain.linearRampToValueAtTime(peakGain, startTime + attack);
         noteGain.gain.exponentialRampToValueAtTime(sustainGain, startTime + attack + decay);
         
-        // Release
-        // Clamp release end to totalDuration to avoid errors if it goes way beyond
         const releaseStart = startTime + duration;
         if (releaseStart < totalDuration) {
              noteGain.gain.setValueAtTime(sustainGain, releaseStart);
              noteGain.gain.exponentialRampToValueAtTime(MIN_VALUE, releaseStart + release);
         }
 
-        // -- Setup Oscillators --
-        const freq1 = this.getFrequencyForNote(event.note, settings.osc1.octave);
-        const freq2 = this.getFrequencyForNote(event.note, settings.osc2.octave);
-        
-        if (freq1 > 0 && freq2 > 0) { // Only play valid notes
-            const osc1 = offlineCtx.createOscillator();
-            const osc2 = offlineCtx.createOscillator();
+        // -- Setup Oscillators / Sample --
+        if (settings.activeCategory === 'Sampling' && this.sampleBuffer) {
+             // Sample Logic
+             const source = offlineCtx.createBufferSource();
+             source.buffer = this.sampleBuffer;
+             
+             const rootMidi = 60;
+             const noteMidi = this.noteToIndexMap.get(event.note) ? this.noteToIndexMap.get(event.note)! + 24 : 60;
+             const pitchRatio = Math.pow(2, (noteMidi - rootMidi) / 12);
+             source.playbackRate.value = pitchRatio * (settings.warpRatio || 1);
+             
+             // Trim Logic
+             const bufferLen = this.sampleBuffer.length;
+             const channelData = this.sampleBuffer.getChannelData(0);
+             const searchWindow = 500;
+             const rawStartIdx = Math.floor(this.sampleSettings.trimStart * bufferLen);
+             const safeStartIdx = this.findNearestPositiveZeroCrossing(channelData, rawStartIdx, searchWindow);
+             const startOffset = safeStartIdx / this.sampleBuffer.sampleRate;
+             
+             let sampleDuration = undefined;
+             if (this.sampleSettings.trimEnd < 1.0) {
+                 const rawEndIdx = Math.floor(this.sampleSettings.trimEnd * bufferLen);
+                 const safeEndIdx = this.findNearestPositiveZeroCrossing(channelData, rawEndIdx, searchWindow);
+                 const endOffset = safeEndIdx / this.sampleBuffer.sampleRate;
+                 sampleDuration = Math.max(0, endOffset - startOffset);
+             }
+             
+             source.loop = this.sampleSettings.loop;
+             if (this.sampleSettings.loop && sampleDuration) {
+                 source.loopStart = startOffset;
+                 source.loopEnd = startOffset + sampleDuration;
+             }
+             
+             source.connect(noteGain);
+             source.start(startTime, startOffset, this.sampleSettings.loop ? undefined : sampleDuration);
+             
+             const stopTime = releaseStart + release + 0.1;
+             source.stop(stopTime);
+
+        } else {
+            // Synth Logic
+            const freq1 = this.getFrequencyForNote(event.note, settings.osc1.octave);
+            const freq2 = this.getFrequencyForNote(event.note, settings.osc2.octave);
             
-            osc1.type = settings.osc1.waveform;
-            osc2.type = settings.osc2.waveform;
-            
-            osc1.frequency.value = safePos(freq1);
-            osc1.detune.value = safe(settings.osc1.detune);
-            
-            osc2.frequency.value = safePos(freq2);
-            osc2.detune.value = safe(settings.osc2.detune);
-            
-            const mix = safe(settings.mix, 0.5);
-            const g1 = offlineCtx.createGain();
-            const g2 = offlineCtx.createGain();
-            g1.gain.value = 1 - mix;
-            g2.gain.value = mix;
-            
-            osc1.connect(g1);
-            osc2.connect(g2);
-            g1.connect(noteGain);
-            g2.connect(noteGain);
-            
-            osc1.start(startTime);
-            osc2.start(startTime);
-            
-            const stopTime = releaseStart + release + 0.1;
-            osc1.stop(stopTime);
-            osc2.stop(stopTime);
+            if (freq1 > 0 && freq2 > 0) {
+                const osc1 = offlineCtx.createOscillator();
+                const osc2 = offlineCtx.createOscillator();
+                
+                osc1.type = settings.osc1.waveform;
+                osc2.type = settings.osc2.waveform;
+                
+                osc1.frequency.value = safePos(freq1);
+                osc1.detune.value = safe(settings.osc1.detune);
+                osc2.frequency.value = safePos(freq2);
+                osc2.detune.value = safe(settings.osc2.detune);
+                
+                // Key Sync FM/AM Logic
+                if (settings.lfo.on && settings.lfo.keySync) {
+                    const lfoOsc = offlineCtx.createOscillator();
+                    lfoOsc.type = settings.lfo.waveform;
+                    // Ratio based
+                    const lfoFreq = freq1 * settings.lfo.rate;
+                    lfoOsc.frequency.value = lfoFreq;
+                    
+                    const lfoAmp = offlineCtx.createGain();
+                    lfoOsc.connect(lfoAmp);
+                    lfoOsc.start(startTime);
+                    const stopTime = releaseStart + release + 0.1;
+                    lfoOsc.stop(stopTime);
+
+                    if (settings.lfo.target === 'pitch') {
+                        // FM
+                        const modIndex = settings.lfo.depth * 1000;
+                        lfoAmp.gain.value = modIndex;
+                        lfoAmp.connect(osc1.frequency);
+                        lfoAmp.connect(osc2.frequency);
+                    } else if (settings.lfo.target === 'amplitude') {
+                        // AM - This requires modulating carrier gains
+                        lfoAmp.gain.value = settings.lfo.depth;
+                        
+                        // We need custom gains for AM
+                        const amGain1 = offlineCtx.createGain();
+                        const amGain2 = offlineCtx.createGain();
+                        amGain1.gain.value = 1 - (settings.lfo.depth / 2);
+                        amGain2.gain.value = 1 - (settings.lfo.depth / 2);
+                        
+                        lfoAmp.connect(amGain1.gain);
+                        lfoAmp.connect(amGain2.gain);
+                        
+                        // Override connection
+                        const mix = safe(settings.mix, 0.5);
+                        const g1 = offlineCtx.createGain();
+                        const g2 = offlineCtx.createGain();
+                        g1.gain.value = 1 - mix;
+                        g2.gain.value = mix;
+                        
+                        osc1.connect(amGain1);
+                        amGain1.connect(g1);
+                        g1.connect(noteGain);
+                        
+                        osc2.connect(amGain2);
+                        amGain2.connect(g2);
+                        g2.connect(noteGain);
+                        
+                        osc1.start(startTime);
+                        osc2.start(startTime);
+                        osc1.stop(stopTime);
+                        osc2.stop(stopTime);
+                        continue; // Skip standard connection
+                    }
+                }
+
+                const mix = safe(settings.mix, 0.5);
+                const g1 = offlineCtx.createGain();
+                const g2 = offlineCtx.createGain();
+                g1.gain.value = 1 - mix;
+                g2.gain.value = mix;
+                
+                osc1.connect(g1);
+                osc2.connect(g2);
+                g1.connect(noteGain);
+                g2.connect(noteGain);
+                
+                osc1.start(startTime);
+                osc2.start(startTime);
+                
+                const stopTime = releaseStart + release + 0.1;
+                osc1.stop(stopTime);
+                osc2.stop(stopTime);
+            }
         }
     }
 
@@ -1041,8 +1236,85 @@ export class AudioEngine {
       this.adaptiveTuningEnabled = enabled;
       if (enabled) this.scheduleRetune();
   }
+  
+  public setMono(enabled: boolean) {
+      this.monoEnabled = enabled;
+  }
 
   private retuneActiveNotes() {
-      // (Placeholder for microtonal adjustment logic)
+      // Robust Adaptive Tuning (Just Intonation)
+      if (!this.adaptiveTuningEnabled || this.activeNodes.size < 2) return;
+
+      const activeNoteList: { note: string, midi: number }[] = [];
+      const activeNoteNames: string[] = [];
+
+      // 1. Collect all active notes
+      this.activeNodes.forEach((node, noteName) => {
+          if (node.sources[0] instanceof OscillatorNode) {
+              const idx = this.noteToIndexMap.get(node.rootNote);
+              if (idx !== undefined) {
+                  const offset = node.osc1Settings?.octave || 0;
+                  const trueMidi = idx + (offset * 12);
+                  activeNoteList.push({ note: noteName, midi: trueMidi });
+                  activeNoteNames.push(node.rootNote);
+              }
+          }
+      });
+
+      if (activeNoteList.length < 2) return;
+
+      // 2. Identify Harmonic Root (Chord detection)
+      let rootChroma: number;
+      
+      const detectedChord = detectChordFromNotes(activeNoteNames);
+      
+      if (detectedChord) {
+          // Extract root note name from chord symbol (e.g., "C" from "Cm" or "G" from "G7")
+          // Logic: Match start of string up to non-accidental/sharp
+          const rootMatch = detectedChord.match(/^([A-G]#?)/);
+          const rootName = rootMatch ? rootMatch[1] : null;
+          
+          if (rootName && NOTE_NAME_TO_CHROMATIC_INDEX[rootName] !== undefined) {
+              rootChroma = NOTE_NAME_TO_CHROMATIC_INDEX[rootName];
+          } else {
+              // Fallback: Lowest note is root
+              activeNoteList.sort((a, b) => a.midi - b.midi);
+              rootChroma = activeNoteList[0].midi % 12;
+          }
+      } else {
+          // Fallback: Lowest note is root
+          activeNoteList.sort((a, b) => a.midi - b.midi);
+          rootChroma = activeNoteList[0].midi % 12;
+      }
+
+      // 3. Tune each note relative to the Harmonic Root Chroma
+      activeNoteList.forEach(item => {
+          const noteChroma = item.midi % 12;
+          
+          // Calculate interval from root chroma (always positive 0-11)
+          const interval = (noteChroma - rootChroma + 12) % 12;
+          
+          const targetRatio = JUST_INTONATION_RATIOS[interval];
+          const etRatio = Math.pow(2, interval / 12);
+          
+          // Calculate detune correction in cents
+          const correctionFactor = targetRatio / etRatio;
+          const correctionCents = 1200 * Math.log2(correctionFactor);
+          
+          // Apply correction
+          const node = this.activeNodes.get(item.note);
+          if (node && node.osc1Settings) {
+              const osc1 = node.sources[0] as OscillatorNode;
+              const osc2 = node.sources[1] as OscillatorNode;
+              
+              const baseDetune1 = node.osc1Settings.detune + this.currentPitchBend;
+              const baseDetune2 = node.osc2Settings!.detune + this.currentPitchBend;
+              
+              const now = this.audioContext.currentTime;
+              // Smooth transition to lock it in
+              osc1.detune.setTargetAtTime(baseDetune1 + correctionCents, now, 0.1);
+              osc2.detune.setTargetAtTime(baseDetune2 + correctionCents, now, 0.1);
+          }
+      });
   }
 }

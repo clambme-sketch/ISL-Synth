@@ -1,9 +1,4 @@
 
-
-
-
-
-
 export type WaveformType = 'sine' | 'square' | 'sawtooth' | 'triangle';
 
 export interface ADSREnvelope {
@@ -37,6 +32,12 @@ export interface LFOSettings {
   keySync?: boolean; // If true, rate is a ratio relative to note frequency (FM)
 }
 
+export interface VisualizerSettings {
+    fade: number; // 0.01 to 0.5 (Trail length: lower is longer)
+    lineWidth: number; // 0.5 to 10
+    glow: number; // 0 to 100
+}
+
 // --- ARPEGGIATOR ---
 export type ArpDirection = 'up' | 'down' | 'upDown' | 'random' | 'played';
 export type ArpRate = '1/4' | '1/8' | '1/16' | '1/32';
@@ -59,6 +60,7 @@ export interface SynthPreset {
   osc1: OscillatorSettings;
   osc2: OscillatorSettings;
   mix: number; // 0 for Osc1, 1 for Osc2
+  mono?: boolean; // New Mono Flag
   singleOscillator?: boolean;
   filter?: FilterSettings;
   reverb?: ReverbSettings;
@@ -80,6 +82,7 @@ export interface SynthSettings {
     osc1: OscillatorSettings;
     osc2: OscillatorSettings;
     mix: number;
+    mono: boolean; // New Mono Setting
     sampleVolume?: number;
     warpRatio?: number; // Added for Sample Warping support
     // Full effects chain settings for export

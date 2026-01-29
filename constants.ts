@@ -1,17 +1,5 @@
 
-
-
-
-
-
-
-
-
-
-
-
-
-import type { SynthPreset, FilterSettings, ReverbSettings, DelaySettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, ArpeggiatorSettings } from './types';
+import type { SynthPreset, FilterSettings, ReverbSettings, DelaySettings, SaturationSettings, ChorusSettings, PhaserSettings, LFOSettings, ArpeggiatorSettings, VisualizerSettings } from './types';
 
 export const NOTE_FREQUENCIES: { [note: string]: number } = {
     'C1': 32.70, 'C#1': 34.65, 'D1': 36.71, 'D#1': 38.89, 'E1': 41.20, 'F1': 43.65, 'F#1': 46.25, 'G1': 49.00, 'G#1': 51.91, 'A1': 55.00, 'A#1': 58.27, 'B1': 61.74,
@@ -69,6 +57,7 @@ export const DEFAULT_CHORUS_SETTINGS: ChorusSettings = { on: false, mix: 0.4, ra
 export const DEFAULT_PHASER_SETTINGS: PhaserSettings = { on: false, mix: 0.5, rate: 1.2, depth: 0.8, baseFrequency: 350 };
 export const DEFAULT_LFO_SETTINGS: LFOSettings = { on: false, waveform: 'sine', rate: 5, depth: 0.2, target: 'pitch', retrigger: false, keySync: false };
 export const DEFAULT_ARP_SETTINGS: ArpeggiatorSettings = { on: false, latch: false, rate: '1/8', direction: 'up', range: 1, gate: 0.8 };
+export const DEFAULT_VISUALIZER_SETTINGS: VisualizerSettings = { fade: 0.15, lineWidth: 1, glow: 15 };
 
 export const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 export const MAJOR_SCALE_INTERVALS = [0, 2, 4, 5, 7, 9, 11]; // W-W-H-W-W-W-H
@@ -233,7 +222,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'triangle', detune: -5, octave: 0 },
     osc2: { waveform: 'sine', detune: 5, octave: 0 },
     mix: 0.5,
-    // Gentle AM combined with heavy reverb for a spooky feel
     lfo: { on: true, waveform: 'sine', rate: 5, depth: 0.4, target: 'amplitude', retrigger: false, keySync: false },
     reverb: { on: true, mix: 0.6, decay: 4.0 },
   },
@@ -244,7 +232,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sine', detune: 0, octave: 1 },
     osc2: { waveform: 'triangle', detune: 0, octave: 1 },
     mix: 0.5,
-    // Key Sync enabled = Ratio based. 2.4 creates inharmonic bell tones. High depth = Ring Mod.
     lfo: { on: true, waveform: 'sine', rate: 2.4, depth: 1.0, target: 'amplitude', retrigger: true, keySync: true },
     reverb: { on: true, mix: 0.4, decay: 3.0 },
   },
@@ -255,7 +242,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sawtooth', detune: 0, octave: 0 },
     osc2: { waveform: 'square', detune: 0, octave: -1 },
     mix: 0.6,
-    // Fast non-synced AM creates a buzzing, gritty texture (Sidebands at ±30Hz)
     lfo: { on: true, waveform: 'sawtooth', rate: 30, depth: 0.8, target: 'amplitude', retrigger: false, keySync: false },
     saturation: { on: true, mix: 0.7, drive: 0.5 },
   },
@@ -267,7 +253,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc2: { waveform: 'sine', detune: 0, octave: 0 },
     mix: 0.0,
     singleOscillator: true,
-    // Sub-audio Key Sync creates rhythmic "chopping" or "aliasing" artifacts depending on ratio
     lfo: { on: true, waveform: 'square', rate: 0.5, depth: 1.0, target: 'amplitude', retrigger: true, keySync: true },
     delay: { on: true, mix: 0.4, time: 0.25, feedback: 0.6 },
   },
@@ -278,7 +263,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'triangle', detune: 0, octave: 1 },
     osc2: { waveform: 'sine', detune: 0, octave: 0 },
     mix: 0.5,
-    // Very fast AM into audio rate creates noise/sum-and-difference tones
     lfo: { on: true, waveform: 'square', rate: 400, depth: 1.0, target: 'amplitude', retrigger: false, keySync: false },
     filter: { on: true, type: 'lowpass', cutoff: 3000, resonance: 2.0 },
   },
@@ -289,7 +273,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'square', detune: 0, octave: 0 },
     osc2: { waveform: 'sawtooth', detune: 0, octave: 0 },
     mix: 0.5,
-    // Rate 2.0 (Octave) keeps it in tune. Depth 1.0 = Full Ring Mod
     lfo: { on: true, waveform: 'sine', rate: 2.0, depth: 0.9, target: 'amplitude', retrigger: true, keySync: true },
     filter: { on: true, type: 'lowpass', cutoff: 8000, resonance: 0.5 },
   },
@@ -300,7 +283,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sawtooth', detune: 0, octave: -1 },
     osc2: { waveform: 'sawtooth', detune: 10, octave: -1 },
     mix: 0.5,
-    // Helicopter-like rhythmic throbbing
     lfo: { on: true, waveform: 'square', rate: 12, depth: 1.0, target: 'amplitude', retrigger: false, keySync: false },
     phaser: { on: true, mix: 0.5, rate: 0.2, depth: 0.7, baseFrequency: 400 },
   },
@@ -331,7 +313,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sawtooth', detune: 0, octave: -2 },
     osc2: { waveform: 'sawtooth', detune: 0, octave: -2 },
     mix: 0.0,
-    // Ring mod on low freqs creates grit
     lfo: { on: true, waveform: 'square', rate: 0.5, depth: 1.0, target: 'amplitude', retrigger: true, keySync: true },
     saturation: { on: true, mix: 0.6, drive: 0.6 },
   },
@@ -345,7 +326,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sine', detune: 0, octave: 0 },
     osc2: { waveform: 'sine', detune: 0, octave: 0 }, 
     mix: 0.0, 
-    // Ratio 1.0 creates a rich, harmonic woody tone typical of FM E-Pianos
     lfo: { on: true, waveform: 'sine', rate: 1.0, depth: 0.3, target: 'pitch', retrigger: true, keySync: true }, 
     chorus: { on: true, mix: 0.3, rate: 0.5, depth: 0.5 },
     reverb: { on: true, mix: 0.2, decay: 1.5 },
@@ -357,7 +337,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sine', detune: 0, octave: 1 },
     osc2: { waveform: 'sine', detune: 0, octave: 1 },
     mix: 0.0,
-    // Ratio 3.0 creates bright, harmonic harmonics (Twelfth) for a consonant bell sound
     lfo: { on: true, waveform: 'sine', rate: 3.0, depth: 0.6, target: 'pitch', retrigger: true, keySync: true },
     reverb: { on: true, mix: 0.4, decay: 3.5 },
   },
@@ -368,7 +347,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sine', detune: 0, octave: -2 },
     osc2: { waveform: 'sine', detune: 0, octave: -2 },
     mix: 0.0,
-    // Ratio 0.5 (Sub-octave modulator) creates a hollow, punchy "Lately Bass" sound
     lfo: { on: true, waveform: 'sine', rate: 0.5, depth: 0.5, target: 'pitch', retrigger: true, keySync: true },
     saturation: { on: true, mix: 0.3, drive: 0.4 },
   },
@@ -379,7 +357,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sine', detune: 0, octave: 1 },
     osc2: { waveform: 'sine', detune: 5, octave: 1 },
     mix: 0.0,
-    // Ratio 2.0 (Octave up) adds a shimmering high end
     lfo: { on: true, waveform: 'sine', rate: 2.0, depth: 0.25, target: 'pitch', retrigger: false, keySync: true }, 
     delay: { on: true, mix: 0.4, time: 0.35, feedback: 0.5 },
     reverb: { on: true, mix: 0.4, decay: 2.5 },
@@ -388,10 +365,9 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     name: 'Metallic Lead',
     category: 'FM',
     adsr: { attack: 0.01, decay: 0.2, sustain: 0.8, release: 0.3 },
-    osc1: { waveform: 'sawtooth', detune: 0, octave: 0 }, // Saw carrier for bite
+    osc1: { waveform: 'sawtooth', detune: 0, octave: 0 },
     osc2: { waveform: 'sine', detune: 0, octave: 0 },
     mix: 0.0,
-    // Ratio 1.0 with Saw carrier creates complex, aggressive harmonics
     lfo: { on: true, waveform: 'sine', rate: 1.0, depth: 0.4, target: 'pitch', retrigger: true, keySync: true },
     saturation: { on: true, mix: 0.5, drive: 0.3 },
   },
@@ -402,7 +378,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'square', detune: 0, octave: -2 },
     osc2: { waveform: 'sine', detune: 0, octave: -2 },
     mix: 0.0,
-    // Modulating a Square wave creates intense growls
     lfo: { on: true, waveform: 'sine', rate: 0.5, depth: 0.6, target: 'pitch', retrigger: true, keySync: true },
     filter: { on: true, type: 'lowpass', cutoff: 800, resonance: 1.0 },
   },
@@ -413,7 +388,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sine', detune: 0, octave: -1 },
     osc2: { waveform: 'sine', detune: 0, octave: -1 },
     mix: 0.0,
-    // Ratio 1.0 ensures percussive tone is in tune (Fundamental)
     lfo: { on: true, waveform: 'sine', rate: 1.0, depth: 0.4, target: 'pitch', retrigger: true, keySync: true },
     reverb: { on: true, mix: 0.1, decay: 0.8 },
   },
@@ -424,7 +398,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sawtooth', detune: -3, octave: 0 },
     osc2: { waveform: 'sawtooth', detune: 3, octave: 0 },
     mix: 0.0,
-    // Classic Synth Brass using FM to add brightness to saw waves
     lfo: { on: true, waveform: 'sine', rate: 1.0, depth: 0.3, target: 'pitch', retrigger: true, keySync: true },
     chorus: { on: true, mix: 0.3, rate: 0.6, depth: 0.4 },
     reverb: { on: true, mix: 0.25, decay: 1.5 },
@@ -436,7 +409,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sine', detune: 0, octave: 0 },
     osc2: { waveform: 'sine', detune: 0, octave: 0 },
     mix: 0.0,
-    // High ratio creates woody attack
     lfo: { on: true, waveform: 'sine', rate: 9.0, depth: 0.4, target: 'pitch', retrigger: true, keySync: true },
     delay: { on: true, mix: 0.2, time: 0.2, feedback: 0.3 },
   },
@@ -447,7 +419,6 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc1: { waveform: 'sine', detune: 0, octave: 2 },
     osc2: { waveform: 'sine', detune: 0, octave: 2 },
     mix: 0.0,
-    // Ratio 5.0 (2 octaves + major third ish harmonic series) keeps high shimmer in key
     lfo: { on: true, waveform: 'sine', rate: 5.0, depth: 0.5, target: 'pitch', retrigger: true, keySync: true },
     reverb: { on: true, mix: 0.6, decay: 4.0 },
   },
@@ -462,6 +433,7 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     mix: 0.8,
     filter: { on: true, type: 'lowpass', cutoff: 600, resonance: 2.0 },
     saturation: { on: true, mix: 0.8, drive: 0.6 },
+    mono: true,
   },
   {
     name: 'Trap 808',
@@ -471,6 +443,7 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc2: { waveform: 'square', detune: 0, octave: -2 },
     mix: 0.1,
     saturation: { on: true, mix: 0.8, drive: 0.8 },
+    mono: true,
   },
   {
     name: 'Shorty 808',
@@ -480,6 +453,7 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc2: { waveform: 'triangle', detune: 0, octave: -1 }, // Added body
     mix: 0.5,
     saturation: { on: true, mix: 0.6, drive: 0.6 }, // Boosted
+    mono: true,
   },
   {
     name: '808 Glide',
@@ -489,6 +463,7 @@ export const SYNTH_PRESETS: SynthPreset[] = [
     osc2: { waveform: 'sine', detune: 4, octave: -2 },
     mix: 0.5,
     saturation: { on: true, mix: 0.6, drive: 0.7 }, // Boosted for volume
+    mono: true,
   },
   {
     name: 'Hard 808', // Moved Up (Swapped with Cowbell)

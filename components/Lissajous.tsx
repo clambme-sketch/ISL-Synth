@@ -1,22 +1,27 @@
 
 import React, { useRef, useEffect } from 'react';
+import type { VisualizerSettings } from '../types';
+import { DEFAULT_VISUALIZER_SETTINGS } from '../constants';
 
 interface LissajousProps {
   analyserX: AnalyserNode | null;
   analyserY: AnalyserNode | null;
   colorX?: string; // Optional, defaults to theme
   colorY?: string; // Optional, defaults to theme
+  settings?: VisualizerSettings;
 }
 
 const CANVAS_WIDTH = 512;
 const CANVAS_HEIGHT = 512;
-const FADE_AMOUNT = 0.15;
-const LINE_WIDTH = 1; 
-const GLOW_BLUR = 15; 
 
-export const Lissajous: React.FC<LissajousProps> = ({ analyserX, analyserY, colorX, colorY }) => {
+export const Lissajous: React.FC<LissajousProps> = ({ analyserX, analyserY, colorX, colorY, settings = DEFAULT_VISUALIZER_SETTINGS }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const colorsRef = useRef({ x: '#00FFFF', y: '#8A2BE2' });
+  const settingsRef = useRef(settings);
+
+  useEffect(() => {
+      settingsRef.current = settings;
+  }, [settings]);
 
   // Update theme colors when props or theme changes
   useEffect(() => {
@@ -69,7 +74,8 @@ export const Lissajous: React.FC<LissajousProps> = ({ analyserX, analyserY, colo
       analyserX.getFloatTimeDomainData(dataArrayX);
       analyserY.getFloatTimeDomainData(dataArrayY);
 
-      context.fillStyle = `rgba(0, 0, 0, ${FADE_AMOUNT})`;
+      // Dynamic Settings Usage
+      context.fillStyle = `rgba(0, 0, 0, ${settingsRef.current.fade})`;
       context.fillRect(0, 0, canvas.width, canvas.height);
       
       const { x: cX, y: cY } = colorsRef.current;
@@ -86,14 +92,16 @@ export const Lissajous: React.FC<LissajousProps> = ({ analyserX, analyserY, colo
       }
 
       // Draw the outer glow (using Secondary/Y color)
-      context.lineWidth = LINE_WIDTH * 4;
-      context.strokeStyle = cY;
-      context.shadowBlur = GLOW_BLUR;
-      context.shadowColor = cY;
-      context.stroke();
+      if (settingsRef.current.glow > 0) {
+          context.lineWidth = settingsRef.current.lineWidth * 4;
+          context.strokeStyle = cY;
+          context.shadowBlur = settingsRef.current.glow;
+          context.shadowColor = cY;
+          context.stroke();
+      }
 
       // Draw the core line (using Primary/X color)
-      context.lineWidth = LINE_WIDTH;
+      context.lineWidth = settingsRef.current.lineWidth;
       context.strokeStyle = cX;
       context.shadowBlur = 0; 
       context.stroke();

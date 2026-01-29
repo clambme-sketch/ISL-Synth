@@ -1,8 +1,8 @@
 
-
 import React, { useState } from 'react';
 import { ChevronDownIcon } from './icons';
 import { Tooltip } from './Tooltip';
+import type { VisualizerSettings } from '../types';
 
 interface SettingsPanelProps {
     adaptiveTuning: boolean;
@@ -18,6 +18,8 @@ interface SettingsPanelProps {
     onConnectMidi: () => void;
     showTooltips: boolean;
     onShowTooltipsChange: (enabled: boolean) => void;
+    visualizerSettings?: VisualizerSettings;
+    onVisualizerSettingsChange?: (settings: VisualizerSettings) => void;
 }
 
 const SettingRow: React.FC<{ label: string; htmlFor?: string; children: React.ReactNode }> = ({ label, htmlFor, children }) => (
@@ -71,6 +73,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     displayKeys,
     midiDeviceName, onConnectMidi,
     showTooltips, onShowTooltipsChange,
+    visualizerSettings, onVisualizerSettingsChange
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     
@@ -175,6 +178,46 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             className="w-5 h-5 rounded bg-synth-gray-700 border-synth-gray-600 text-synth-cyan-500 focus:ring-2 focus:ring-offset-2 focus:ring-offset-synth-gray-900 focus:ring-synth-cyan-500 cursor-pointer"
                         />
                     </SettingRow>
+
+                    {visualizerSettings && onVisualizerSettingsChange && (
+                        <>
+                            <SectionHeader title="Visualizer" />
+                            <SettingRow label="Trail Length">
+                                <input 
+                                    type="range" 
+                                    min="0.05" 
+                                    max="0.5" 
+                                    step="0.01" 
+                                    // Invert value for "Trail Length" (Low Fade = Long Trail)
+                                    value={0.55 - visualizerSettings.fade} 
+                                    onChange={(e) => onVisualizerSettingsChange({...visualizerSettings, fade: 0.55 - parseFloat(e.target.value)})}
+                                    className="w-24 horizontal-slider"
+                                />
+                            </SettingRow>
+                            <SettingRow label="Line Width">
+                                <input 
+                                    type="range" 
+                                    min="0.5" 
+                                    max="5" 
+                                    step="0.5" 
+                                    value={visualizerSettings.lineWidth} 
+                                    onChange={(e) => onVisualizerSettingsChange({...visualizerSettings, lineWidth: parseFloat(e.target.value)})}
+                                    className="w-24 horizontal-slider"
+                                />
+                            </SettingRow>
+                            <SettingRow label="Glow Amount">
+                                <input 
+                                    type="range" 
+                                    min="0" 
+                                    max="50" 
+                                    step="1" 
+                                    value={visualizerSettings.glow} 
+                                    onChange={(e) => onVisualizerSettingsChange({...visualizerSettings, glow: parseFloat(e.target.value)})}
+                                    className="w-24 horizontal-slider"
+                                />
+                            </SettingRow>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

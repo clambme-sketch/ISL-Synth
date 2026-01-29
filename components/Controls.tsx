@@ -1,15 +1,6 @@
 
-
-
-
-
-
-
-
-
-
 import React from 'react';
-import type { ADSREnvelope, OscillatorSettings, SynthPreset, PresetCategory } from '../types';
+import type { ADSREnvelope, OscillatorSettings, SynthPreset, PresetCategory, VisualizerSettings } from '../types';
 import { Lissajous } from './Lissajous';
 import { SpectrumAnalyzer } from './SpectrumAnalyzer';
 import { SliderControl } from './Knob';
@@ -32,6 +23,8 @@ interface ControlsProps {
   onPresetChange: (preset: SynthPreset) => void;
   activePresetName: string;
   activeCategory: PresetCategory;
+  isMono?: boolean;
+  setIsMono?: React.Dispatch<React.SetStateAction<boolean>>;
   analyserX: AnalyserNode | null;
   analyserY: AnalyserNode | null;
   showTooltips: boolean;
@@ -46,6 +39,7 @@ interface ControlsProps {
   onSampleLoopChange?: (loop: boolean) => void;
   sampleBpm?: number;
   onSampleBpmChange?: (bpm: number) => void;
+  visualizerSettings?: VisualizerSettings;
 }
 
 const categoryTooltips: Record<PresetCategory, string> = {
@@ -57,12 +51,15 @@ const categoryTooltips: Record<PresetCategory, string> = {
     'Sampling': "Load your own audio and play it like an instrument across the keyboard.",
 };
 
+const MONO_ALLOWED_PRESETS = ['Classic 808 Bass', 'Trap 808', 'Shorty 808', '808 Glide'];
+
 export const Controls: React.FC<ControlsProps> = ({
   adsr, setAdsr,
   osc1, setOsc1,
   osc2, setOsc2,
   oscMix, setOscMix,
   onPresetChange, activePresetName, activeCategory,
+  isMono, setIsMono,
   analyserX, analyserY,
   showTooltips,
   onSampleLoad,
@@ -70,10 +67,12 @@ export const Controls: React.FC<ControlsProps> = ({
   trimStart, trimEnd, onTrimChange,
   sampleVolume, onSampleVolumeChange,
   sampleLoop, onSampleLoopChange,
-  sampleBpm, onSampleBpmChange
+  sampleBpm, onSampleBpmChange,
+  visualizerSettings
 }) => {
   const isSingleOscillatorMode = SYNTH_PRESETS.find(p => p.name === activePresetName)?.singleOscillator ?? false;
   const isSamplingMode = activeCategory === 'Sampling';
+  const showMonoToggle = MONO_ALLOWED_PRESETS.includes(activePresetName);
 
   // Categorize presets
   const categories: PresetCategory[] = ['Simple', 'Subtractive', 'AM', 'FM', '808', 'Sampling'];
@@ -164,8 +163,23 @@ export const Controls: React.FC<ControlsProps> = ({
                         
                         {!isSingleOscillatorMode && (
                             <>
-                                <div className="flex flex-col items-center justify-center p-2 bg-synth-gray-900/30 rounded-lg border border-synth-gray-700/30 w-full md:w-24">
+                                <div className="flex flex-col items-center justify-center p-2 bg-synth-gray-900/30 rounded-lg border border-synth-gray-700/30 w-full md:w-24 gap-3">
                                     <SliderControl label="Mix" value={oscMix} min={0} max={1} step={0.01} onChange={setOscMix} showTooltip={showTooltips} tooltipText={`OSC 1: ${(100 - oscMix * 100).toFixed(0)}% | OSC 2: ${(oscMix * 100).toFixed(0)}%`} />
+                                    
+                                    {showMonoToggle && setIsMono && (
+                                        <Tooltip text="Mono Mode: Only play one note at a time (essential for 808 glides)" show={showTooltips}>
+                                            <button
+                                                onClick={() => setIsMono(!isMono)}
+                                                className={`px-3 py-1 text-[10px] font-bold rounded-full transition-all border ${
+                                                    isMono 
+                                                    ? 'bg-synth-cyan-500 text-synth-gray-900 border-synth-cyan-400 shadow-[0_0_8px_rgba(0,255,255,0.5)]' 
+                                                    : 'bg-synth-gray-700 text-synth-gray-500 border-synth-gray-600 hover:border-synth-gray-500'
+                                                }`}
+                                            >
+                                                MONO
+                                            </button>
+                                        </Tooltip>
+                                    )}
                                 </div>
                                 <OscillatorSection id={2} settings={osc2} onSettingsChange={setOsc2} isSingleOscillatorMode={isSingleOscillatorMode} showTooltips={showTooltips} />
                             </>
@@ -207,6 +221,7 @@ export const Controls: React.FC<ControlsProps> = ({
                             analyserY={analyserY}
                             colorX={isFm ? "rgb(var(--secondary-500))" : undefined}
                             colorY={isFm ? "rgb(var(--accent-500))" : undefined}
+                            settings={visualizerSettings}
                         />
                     </div>
                 </div>
